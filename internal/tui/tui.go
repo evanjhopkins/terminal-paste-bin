@@ -15,6 +15,7 @@ type Model struct {
 	binName      string
 	slots        map[int]string
 	selectedSlot int
+	expanded     bool
 	width        int
 }
 
@@ -69,13 +70,22 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 	if key == "q" {
 		return m, tea.Quit
 	}
+	if key == "v" && m.selectedSlot >= 0 {
+		m.expanded = !m.expanded
+		return m, nil
+	}
 	if len(key) == 1 && key[0] >= '0' && key[0] <= '9' {
 		m.selectedSlot = int(key[0] - '0')
+		m.expanded = false
 	}
 	return m, nil
 }
 
 func (m Model) render() string {
+	if m.expanded {
+		return m.renderExpanded()
+	}
+
 	var output strings.Builder
 	fmt.Fprintf(&output, "Terminal Paste Bin - %s\n\n", m.binName)
 
@@ -87,8 +97,21 @@ func (m Model) render() string {
 		fmt.Fprintf(&output, "%s %d  %s\n", marker, slot, preview(m.slots[slot], m.width-5))
 	}
 
-	output.WriteString("\n1-0 select   q quit\n")
+	if m.selectedSlot >= 0 {
+		output.WriteString("\n1-0 select   v view   q quit\n")
+	} else {
+		output.WriteString("\n1-0 select   q quit\n")
+	}
 	return output.String()
+}
+
+func (m Model) renderExpanded() string {
+	value := m.slots[m.selectedSlot]
+	if value == "" {
+		value = "<blank>"
+	}
+
+	return fmt.Sprintf("Slot %d\n\n%s\n\n1-0 select   v collapse   q quit\n", m.selectedSlot, value)
 }
 
 func preview(value string, maxWidth int) string {
