@@ -16,6 +16,14 @@ func TestModelSelectsSlotImmediately(t *testing.T) {
 	}
 }
 
+func TestEscapeQuits(t *testing.T) {
+	model := New("default", nil)
+	_, command := model.handleKey("esc")
+	if command == nil {
+		t.Fatal("Escape did not return a quit command")
+	}
+}
+
 func TestModelTogglesExpandedView(t *testing.T) {
 	model := New("default", map[int]string{3: "hello\nworld"})
 	selected, _ := model.handleKey("3")
@@ -44,6 +52,51 @@ func TestSelectingDifferentSlotCollapsesView(t *testing.T) {
 
 	if got.selectedSlot != 4 || got.expanded {
 		t.Errorf("selection = (slot %d, expanded %t), want (slot 4, false)", got.selectedSlot, got.expanded)
+	}
+}
+
+func TestModelUsesArrowKeysForViewState(t *testing.T) {
+	model := New("default", nil)
+	selected, _ := model.handleKey("3")
+	expanded, _ := selected.(Model).handleKey("right")
+	if !expanded.(Model).expanded {
+		t.Error("right arrow did not expand the selected slot")
+	}
+
+	collapsed, _ := expanded.(Model).handleKey("left")
+	if collapsed.(Model).expanded {
+		t.Error("left arrow did not collapse the selected slot")
+	}
+}
+
+func TestModelRendersArrowKeyHints(t *testing.T) {
+	model := New("default", nil)
+	if view := model.View().Content; !strings.Contains(view, "↑/↓ move") {
+		t.Errorf("compact view missing arrow hint: %q", view)
+	}
+
+	selected, _ := model.handleKey("3")
+	expanded, _ := selected.(Model).handleKey("right")
+	if view := expanded.(Model).View().Content; !strings.Contains(view, "←/v collapse") {
+		t.Errorf("expanded view missing arrow hint: %q", view)
+	}
+}
+
+func TestModelMovesSelectionWithArrowKeys(t *testing.T) {
+	model := New("default", nil)
+	updated, _ := model.handleKey("down")
+	if got := updated.(Model).selectedSlot; got != 1 {
+		t.Errorf("first down selection = %d, want 1", got)
+	}
+
+	updated, _ = updated.(Model).handleKey("up")
+	if got := updated.(Model).selectedSlot; got != 0 {
+		t.Errorf("up selection = %d, want 0", got)
+	}
+
+	updated, _ = updated.(Model).handleKey("down")
+	if got := updated.(Model).selectedSlot; got != 1 {
+		t.Errorf("down selection = %d, want 1", got)
 	}
 }
 

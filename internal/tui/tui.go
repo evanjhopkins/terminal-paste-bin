@@ -10,6 +10,8 @@ import (
 
 const defaultWidth = 80
 
+var slotOrder = [10]int{1, 2, 3, 4, 5, 6, 7, 8, 9, 0}
+
 // Model is the interactive state for a single TPB bin.
 type Model struct {
 	binName      string
@@ -67,18 +69,51 @@ func (m Model) View() tea.View {
 }
 
 func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
-	if key == "q" {
+	if key == "q" || key == "esc" {
 		return m, tea.Quit
 	}
-	if key == "v" && m.selectedSlot >= 0 {
-		m.expanded = !m.expanded
+	if m.selectedSlot >= 0 {
+		if !m.expanded && (key == "v" || key == "right") {
+			m.expanded = true
+			return m, nil
+		}
+		if m.expanded && (key == "v" || key == "left") {
+			m.expanded = false
+			return m, nil
+		}
+	}
+	if !m.expanded && (key == "up" || key == "down") {
+		m.moveSelection(key)
 		return m, nil
 	}
 	if len(key) == 1 && key[0] >= '0' && key[0] <= '9' {
-		m.selectedSlot = int(key[0] - '0')
-		m.expanded = false
+		m.selectSlot(int(key[0] - '0'))
 	}
 	return m, nil
+}
+
+func (m *Model) moveSelection(direction string) {
+	if m.selectedSlot < 0 {
+		m.selectSlot(slotOrder[0])
+		return
+	}
+
+	for index, slot := range slotOrder {
+		if slot != m.selectedSlot {
+			continue
+		}
+		if direction == "up" {
+			m.selectSlot(slotOrder[(index+len(slotOrder)-1)%len(slotOrder)])
+			return
+		}
+		m.selectSlot(slotOrder[(index+1)%len(slotOrder)])
+		return
+	}
+}
+
+func (m *Model) selectSlot(slot int) {
+	m.selectedSlot = slot
+	m.expanded = false
 }
 
 func (m Model) render() string {
@@ -89,7 +124,7 @@ func (m Model) render() string {
 	var output strings.Builder
 	fmt.Fprintf(&output, "Terminal Paste Bin - %s\n\n", m.binName)
 
-	for _, slot := range []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 0} {
+	for _, slot := range slotOrder {
 		marker := " "
 		if m.selectedSlot == slot {
 			marker = ">"
@@ -98,9 +133,9 @@ func (m Model) render() string {
 	}
 
 	if m.selectedSlot >= 0 {
-		output.WriteString("\n1-0 select   v view   q quit\n")
+		output.WriteString("\n↑/↓ move   1-0 select   →/v view   q quit\n")
 	} else {
-		output.WriteString("\n1-0 select   q quit\n")
+		output.WriteString("\n↑/↓ move   1-0 select   q quit\n")
 	}
 	return output.String()
 }
@@ -111,7 +146,7 @@ func (m Model) renderExpanded() string {
 		value = "<blank>"
 	}
 
-	return fmt.Sprintf("Slot %d\n\n%s\n\n1-0 select   v collapse   q quit\n", m.selectedSlot, value)
+	return fmt.Sprintf("Slot %d\n\n%s\n\n1-0 select   ←/v collapse   q quit\n", m.selectedSlot, value)
 }
 
 func preview(value string, maxWidth int) string {
