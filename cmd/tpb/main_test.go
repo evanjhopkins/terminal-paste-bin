@@ -174,6 +174,56 @@ func TestWriteClipboardToSlotPreservesContents(t *testing.T) {
 	}
 }
 
+func TestCopySlotToClipboardPreservesContents(t *testing.T) {
+	paths, err := store.PathsFor(t.TempDir(), "tpb")
+	if err != nil {
+		t.Fatalf("PathsFor: %v", err)
+	}
+	bins, err := store.Open(paths)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if err := bins.EnsureBin("default"); err != nil {
+		t.Fatalf("EnsureBin: %v", err)
+	}
+	want := "hello\n\u4e16\u754c\n"
+	if err := bins.WriteSlot("default", 3, want); err != nil {
+		t.Fatalf("WriteSlot: %v", err)
+	}
+
+	writer := &recordingWriter{}
+	copied, err := copySlotToClipboard(paths, "default", 3, writer)
+	if err != nil || !copied {
+		t.Fatalf("copySlotToClipboard = (%t, %v), want (true, nil)", copied, err)
+	}
+	if writer.value != want {
+		t.Errorf("clipboard value = %q, want %q", writer.value, want)
+	}
+}
+
+func TestCopySlotToClipboardLeavesBlankSlotUntouched(t *testing.T) {
+	paths, err := store.PathsFor(t.TempDir(), "tpb")
+	if err != nil {
+		t.Fatalf("PathsFor: %v", err)
+	}
+	bins, err := store.Open(paths)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if err := bins.EnsureBin("default"); err != nil {
+		t.Fatalf("EnsureBin: %v", err)
+	}
+
+	writer := &recordingWriter{}
+	copied, err := copySlotToClipboard(paths, "default", 3, writer)
+	if err != nil || copied {
+		t.Fatalf("copySlotToClipboard = (%t, %v), want (false, nil)", copied, err)
+	}
+	if writer.calls != 0 {
+		t.Errorf("clipboard writes = %d, want 0", writer.calls)
+	}
+}
+
 type fakeClipboard struct {
 	value string
 	err   error
@@ -181,4 +231,16 @@ type fakeClipboard struct {
 
 func (c fakeClipboard) Read() (string, error) {
 	return c.value, c.err
+}
+
+type recordingWriter struct {
+	value string
+	calls int
+	err   error
+}
+
+func (w *recordingWriter) Write(value string) error {
+	w.calls++
+	w.value = value
+	return w.err
 }

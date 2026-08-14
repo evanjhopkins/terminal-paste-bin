@@ -102,6 +102,48 @@ func TestModelStaysOpenWhenWriteFails(t *testing.T) {
 	}
 }
 
+func TestModelCopiesSelectedSlotAndQuits(t *testing.T) {
+	copiedSlot := -1
+	model := NewWithActions("default", nil, Actions{
+		CopySlot: func(slot int) (bool, error) {
+			copiedSlot = slot
+			return true, nil
+		},
+	})
+	selected, _ := model.handleKey("3")
+	_, command := selected.(Model).handleKey("r")
+
+	if copiedSlot != 3 {
+		t.Errorf("copied slot = %d, want 3", copiedSlot)
+	}
+	if command == nil {
+		t.Fatal("successful copy did not return a quit command")
+	}
+}
+
+func TestModelLeavesClipboardUntouchedForBlankSlot(t *testing.T) {
+	copyCalls := 0
+	model := NewWithActions("default", nil, Actions{
+		CopySlot: func(int) (bool, error) {
+			copyCalls++
+			return false, nil
+		},
+	})
+	selected, _ := model.handleKey("3")
+	updated, command := selected.(Model).handleKey("r")
+	got := updated.(Model)
+
+	if copyCalls != 1 {
+		t.Errorf("copy calls = %d, want 1", copyCalls)
+	}
+	if command != nil {
+		t.Error("blank slot returned a quit command")
+	}
+	if got.status != "Slot 3 is blank." {
+		t.Errorf("blank slot status = %q", got.status)
+	}
+}
+
 func TestModelTogglesExpandedView(t *testing.T) {
 	model := New("default", map[int]string{3: "hello\nworld"})
 	selected, _ := model.handleKey("3")

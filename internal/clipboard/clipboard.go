@@ -3,7 +3,9 @@ package clipboard
 
 import (
 	"fmt"
+	"io"
 	"os/exec"
+	"strings"
 )
 
 // Reader reads text from the system clipboard.
@@ -11,32 +13,70 @@ type Reader interface {
 	Read() (string, error)
 }
 
-type commandClipboard struct {
-	name string
-	args []string
-	run  func(string, ...string) ([]byte, error)
+// Writer writes text to the system clipboard.
+type Writer interface {
+	Write(value string) error
 }
 
-func newCommandClipboard(name string, args ...string) Reader {
-	return commandClipboard{name: name, args: args, run: runCommand}
+// Clipboard provides bidirectional system clipboard access.
+type Clipboard interface {
+	Reader
+	Writer
+}
+
+type commandClipboard struct {
+	readName  string
+	readArgs  []string
+	writeName string
+	writeArgs []string
+	runOutput func(string, ...string) ([]byte, error)
+	runInput  func(string, []string, io.Reader) error
+}
+
+func newCommandClipboard(readName string, readArgs []string, writeName string, writeArgs []string) Clipboard {
+	return commandClipboard{
+		readName:  readName,
+		readArgs:  readArgs,
+		writeName: writeName,
+		writeArgs: writeArgs,
+		runOutput: runCommandOutput,
+		runInput:  runCommandInput,
+	}
 }
 
 func (c commandClipboard) Read() (string, error) {
-	contents, err := c.run(c.name, c.args...)
+	contents, err := c.runOutput(c.readName, c.readArgs...)
 	if err != nil {
-		return "", fmt.Errorf("read clipboard with %s: %w", c.name, err)
+		return "", fmt.Errorf("read clipboard with %s: %w", c.readName, err)
 	}
 	return string(contents), nil
 }
 
-type unavailableReader struct {
+func (c commandClipboard) Write(value string) error {
+	if err := c.runInput(c.writeName, c.writeArgs, strings.NewReader(value)); err != nil {
+		return fmt.Errorf("write clipboard with %s: %w", c.writeName, err)
+	}
+	return nil
+}
+
+type unavailableClipboard struct {
 	reason string
 }
 
-func (r unavailableReader) Read() (string, error) {
+func (r unavailableClipboard) Read() (string, error) {
 	return "", fmt.Errorf("clipboard unavailable: %s", r.reason)
 }
 
-func runCommand(name string, args ...string) ([]byte, error) {
+func (r unavailableClipboard) Write(string) error {
+	return fmt.Errorf("clipboard unavailable: %s", r.reason)
+}
+
+func runCommandOutput(name string, args ...string) ([]byte, error) {
 	return exec.Command(name, args...).Output()
+}
+
+func runCommandInput(name string, args []string, input io.Reader) error {
+	command := exec.Command(name, args...)
+	command.Stdin = input
+	return command.Run()
 }

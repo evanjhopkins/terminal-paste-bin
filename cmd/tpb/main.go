@@ -25,6 +25,9 @@ func main() {
 			WriteSlot: func(slot int) error {
 				return writeClipboardToSlot(paths, launch.name, slot, systemClipboard)
 			},
+			CopySlot: func(slot int) (bool, error) {
+				return copySlotToClipboard(paths, launch.name, slot, systemClipboard)
+			},
 		})
 	}
 	if err != nil {
@@ -116,4 +119,22 @@ func writeClipboardToSlot(paths store.Paths, binName string, slot int, reader cl
 		return err
 	}
 	return bins.WriteSlot(binName, slot, value)
+}
+
+func copySlotToClipboard(paths store.Paths, binName string, slot int, writer clipboard.Writer) (bool, error) {
+	bins, err := store.Open(paths)
+	if err != nil {
+		return false, err
+	}
+	value, exists, err := bins.ReadSlot(binName, slot)
+	if err != nil {
+		return false, err
+	}
+	if !exists {
+		return false, nil
+	}
+	if err := writer.Write(value); err != nil {
+		return false, err
+	}
+	return true, nil
 }

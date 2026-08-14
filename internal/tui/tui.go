@@ -27,6 +27,7 @@ type Model struct {
 type Actions struct {
 	DeleteSlot func(slot int) error
 	WriteSlot  func(slot int) error
+	CopySlot   func(slot int) (bool, error)
 }
 
 // New creates a compact slot-selection view for binName.
@@ -93,6 +94,9 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 		if key == "w" {
 			return m.writeSelectedSlot()
 		}
+		if key == "r" {
+			return m.copySelectedSlot()
+		}
 		if !m.expanded && (key == "v" || key == "right") {
 			m.expanded = true
 			return m, nil
@@ -135,6 +139,24 @@ func (m Model) writeSelectedSlot() (tea.Model, tea.Cmd) {
 	if err := m.actions.WriteSlot(m.selectedSlot); err != nil {
 		m.expanded = false
 		m.status = fmt.Sprintf("Error writing slot %d: %v", m.selectedSlot, err)
+		return m, nil
+	}
+	return m, tea.Quit
+}
+
+func (m Model) copySelectedSlot() (tea.Model, tea.Cmd) {
+	if m.actions.CopySlot == nil {
+		return m, nil
+	}
+	copied, err := m.actions.CopySlot(m.selectedSlot)
+	if err != nil {
+		m.expanded = false
+		m.status = fmt.Sprintf("Error reading slot %d: %v", m.selectedSlot, err)
+		return m, nil
+	}
+	if !copied {
+		m.expanded = false
+		m.status = fmt.Sprintf("Slot %d is blank.", m.selectedSlot)
 		return m, nil
 	}
 	return m, tea.Quit
@@ -185,7 +207,7 @@ func (m Model) render() string {
 	}
 
 	if m.selectedSlot >= 0 {
-		output.WriteString("\n↑/↓ move   1-0 select   →/v view   w write   d delete   q quit\n")
+		output.WriteString("\n↑/↓ move   1-0 select   →/v view   r read   w write   d delete   q quit\n")
 	} else {
 		output.WriteString("\n↑/↓ move   1-0 select   q quit\n")
 	}
@@ -198,7 +220,7 @@ func (m Model) renderExpanded() string {
 		value = "<blank>"
 	}
 
-	return fmt.Sprintf("Slot %d\n\n%s\n\n1-0 select   ←/v collapse   w write   d delete   q quit\n", m.selectedSlot, value)
+	return fmt.Sprintf("Slot %d\n\n%s\n\n1-0 select   ←/v collapse   r read   w write   d delete   q quit\n", m.selectedSlot, value)
 }
 
 func preview(value string, maxWidth int) string {

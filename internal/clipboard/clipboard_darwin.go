@@ -2,7 +2,7 @@
 
 package clipboard
 
-// New returns the macOS system clipboard reader.
-func New() Reader {
-	return newCommandClipboard("pbpaste")
+// New returns the macOS system clipboard.
+func New() Clipboard {
+	return newCommandClipboard("pbpaste", nil, "pbcopy", nil)
 }
