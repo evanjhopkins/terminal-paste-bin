@@ -133,7 +133,7 @@ func ValidateBinName(name string) error {
 func ensureConfigFile(path string) error {
 	contents, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
+		if err := writeFileAtomic(path, []byte("{}\n")); err != nil {
 			return fmt.Errorf("create config file: %w", err)
 		}
 		return nil
@@ -198,7 +198,7 @@ func saveBins(path string, bins map[string]bin) error {
 	if err != nil {
 		return fmt.Errorf("encode bins: %w", err)
 	}
-	if err := os.WriteFile(path, append(contents, '\n'), 0o600); err != nil {
+	if err := writeFileAtomic(path, append(contents, '\n')); err != nil {
 		return fmt.Errorf("write bins file: %w", err)
 	}
 	return nil

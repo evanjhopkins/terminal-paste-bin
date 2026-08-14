@@ -66,6 +66,15 @@ func TestOpenCreatesEmptyConfigAndBinsFiles(t *testing.T) {
 	if _, err := os.Stat(paths.BinsFile); err != nil {
 		t.Fatalf("stat bins file: %v", err)
 	}
+	for _, path := range []string{paths.ConfigFile, paths.BinsFile} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("stat %s: %v", path, err)
+		}
+		if got, want := info.Mode().Perm(), os.FileMode(0o600); got != want {
+			t.Errorf("permissions for %s = %o, want %o", path, got, want)
+		}
+	}
 }
 
 func TestOpenRejectsMalformedFiles(t *testing.T) {
@@ -92,7 +101,40 @@ func TestOpenRejectsMalformedFiles(t *testing.T) {
 			if err == nil {
 				t.Fatal("Open succeeded for malformed JSON")
 			}
+			contents, readErr := os.ReadFile(test.file(paths))
+			if readErr != nil {
+				t.Fatalf("read malformed file: %v", readErr)
+			}
+			if string(contents) != "{" {
+				t.Errorf("malformed file was changed to %q", contents)
+			}
 		})
+	}
+}
+
+func TestWriteFileAtomicReplacesContentsAndCleansUp(t *testing.T) {
+	directory := t.TempDir()
+	path := directory + "/data.json"
+	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+		t.Fatalf("write original file: %v", err)
+	}
+
+	if err := writeFileAtomic(path, []byte("new")); err != nil {
+		t.Fatalf("writeFileAtomic: %v", err)
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read replacement file: %v", err)
+	}
+	if string(contents) != "new" {
+		t.Errorf("replacement contents = %q, want %q", contents, "new")
+	}
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatalf("read storage directory: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "data.json" {
+		t.Errorf("directory entries = %v, want only data.json", entries)
 	}
 }
 
