@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/mattn/go-runewidth"
 )
 
 const defaultWidth = 80
@@ -229,12 +230,14 @@ func preview(value string, maxWidth int) string {
 	}
 
 	value = strings.NewReplacer("\r\n", " \u21b5 ", "\n", " \u21b5 ", "\r", " \u21b5 ").Replace(value)
-	runes := []rune(value)
-	if len(runes) <= maxWidth {
+	if maxWidth <= 0 {
+		return ""
+	}
+	if runewidth.StringWidth(value) <= maxWidth {
 		return value
 	}
 	if maxWidth <= 3 {
-		return string(runes[:max(0, maxWidth)])
+		return runewidth.Truncate(value, maxWidth, "")
 	}
-	return string(runes[:maxWidth-3]) + "..."
+	return runewidth.Truncate(value, maxWidth, "...")
 }

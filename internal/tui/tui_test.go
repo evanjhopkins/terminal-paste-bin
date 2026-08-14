@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/mattn/go-runewidth"
 )
 
 func TestModelSelectsSlotImmediately(t *testing.T) {
@@ -242,5 +243,26 @@ func TestPreviewTruncatesToAvailableWidth(t *testing.T) {
 	}
 	if got, want := preview("", 4), "<..."; got != want {
 		t.Errorf("blank preview = %q, want %q", got, want)
+	}
+	if got, want := preview("\u4e16\u754cabc", 5), "\u4e16..."; got != want {
+		t.Errorf("wide preview = %q, want %q", got, want)
+	}
+	if got, want := preview("e\u0301clair", 4), "e\u0301..."; got != want {
+		t.Errorf("combining preview = %q, want %q", got, want)
+	}
+	if got := preview("value", 0); got != "" {
+		t.Errorf("zero-width preview = %q, want empty", got)
+	}
+
+	for _, test := range []struct {
+		value string
+		width int
+	}{
+		{value: preview("\u4e16\u754cabc", 5), width: 5},
+		{value: preview("e\u0301clair", 4), width: 4},
+	} {
+		if got := runewidth.StringWidth(test.value); got > test.width {
+			t.Errorf("preview width = %d, exceeds %d for %q", got, test.width, test.value)
+		}
 	}
 }
