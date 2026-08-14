@@ -20,18 +20,31 @@ func main() {
 }
 
 func run(args []string, paths store.Paths, output io.Writer) error {
-	if len(args) != 1 || args[0] != "list" {
-		return fmt.Errorf("only \"tpb list\" is available until interactive mode is implemented")
+	if len(args) != 1 {
+		return fmt.Errorf("only \"tpb list\" and \"tpb reset\" are available until interactive mode is implemented")
 	}
 
-	bins, err := store.Open(paths)
-	if err != nil {
-		return err
-	}
-	for _, name := range bins.ListBins() {
-		if _, err := fmt.Fprintln(output, name); err != nil {
-			return fmt.Errorf("write bin list: %w", err)
+	switch args[0] {
+	case "list":
+		bins, err := store.Open(paths)
+		if err != nil {
+			return err
 		}
+		for _, name := range bins.ListBins() {
+			if _, err := fmt.Fprintln(output, name); err != nil {
+				return fmt.Errorf("write bin list: %w", err)
+			}
+		}
+		return nil
+	case "reset":
+		if err := store.Reset(paths); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(output, "Reset complete."); err != nil {
+			return fmt.Errorf("write reset result: %w", err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("only \"tpb list\" and \"tpb reset\" are available until interactive mode is implemented")
 	}
-	return nil
 }

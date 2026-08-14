@@ -54,6 +54,22 @@ func Open(paths Paths) (*Store, error) {
 	return store, nil
 }
 
+// Reset removes all persisted TPB data for one environment.
+func Reset(paths Paths) error {
+	if err := os.MkdirAll(paths.Directory, 0o700); err != nil {
+		return fmt.Errorf("create storage directory: %w", err)
+	}
+
+	return withFileLock(paths.LockFile, func() error {
+		for _, path := range []string{paths.BinsFile, paths.ConfigFile} {
+			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("remove persisted file %s: %w", path, err)
+			}
+		}
+		return nil
+	})
+}
+
 // EnsureBin creates a blank bin if it does not already exist.
 func (s *Store) EnsureBin(name string) error {
 	if err := ValidateBinName(name); err != nil {
