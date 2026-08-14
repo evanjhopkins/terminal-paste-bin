@@ -10,11 +10,32 @@ import (
 	"github.com/evanjhopkins/terminal-paste-bin/internal/tui"
 )
 
+const helpText = `Terminal Paste Bin
+
+Usage:
+  tpb [bin-name]
+  tpb list
+  tpb reset
+
+Options:
+  -h, --help      Show help
+  -v, --version   Show version
+`
+
+// version is set at build time for release builds.
+var version = "devel"
+
 func main() {
-	paths, err := store.DefaultPaths(os.Args[0])
 	var launch *binLaunch
-	if err == nil {
+	var paths store.Paths
+	var err error
+	if isInformationalInvocation(os.Args[1:]) {
 		launch, err = run(os.Args[1:], paths, os.Stdout)
+	} else {
+		paths, err = store.DefaultPaths(os.Args[0])
+		if err == nil {
+			launch, err = run(os.Args[1:], paths, os.Stdout)
+		}
 	}
 	if err == nil && launch != nil {
 		systemClipboard := clipboard.New()
@@ -42,6 +63,20 @@ type binLaunch struct {
 }
 
 func run(args []string, paths store.Paths, output io.Writer) (*binLaunch, error) {
+	if isInformationalInvocation(args) {
+		switch args[0] {
+		case "-h", "--help":
+			if _, err := fmt.Fprint(output, helpText); err != nil {
+				return nil, fmt.Errorf("write help: %w", err)
+			}
+		case "-v", "--version":
+			if _, err := fmt.Fprintf(output, "tpb %s\n", version); err != nil {
+				return nil, fmt.Errorf("write version: %w", err)
+			}
+		}
+		return nil, nil
+	}
+
 	if len(args) == 0 {
 		return loadBin("default", paths)
 	}
@@ -72,6 +107,18 @@ func run(args []string, paths store.Paths, output io.Writer) (*binLaunch, error)
 		return loadBin(args[0], paths)
 	}
 	return nil, nil
+}
+
+func isInformationalInvocation(args []string) bool {
+	if len(args) != 1 {
+		return false
+	}
+	switch args[0] {
+	case "-h", "--help", "-v", "--version":
+		return true
+	default:
+		return false
+	}
 }
 
 func loadBin(name string, paths store.Paths) (*binLaunch, error) {

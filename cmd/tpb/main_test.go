@@ -48,6 +48,42 @@ func TestRunRejectsUnavailableCommands(t *testing.T) {
 	}
 }
 
+func TestRunInformationalFlagsDoNotCreateStorage(t *testing.T) {
+	tests := []struct {
+		args []string
+		want string
+	}{
+		{args: []string{"-h"}, want: helpText},
+		{args: []string{"--help"}, want: helpText},
+		{args: []string{"-v"}, want: "tpb " + version + "\n"},
+		{args: []string{"--version"}, want: "tpb " + version + "\n"},
+	}
+
+	for _, test := range tests {
+		t.Run(strings.Join(test.args, ""), func(t *testing.T) {
+			paths, err := store.PathsFor(t.TempDir(), "tpb")
+			if err != nil {
+				t.Fatalf("PathsFor: %v", err)
+			}
+
+			var output bytes.Buffer
+			launch, err := run(test.args, paths, &output)
+			if err != nil {
+				t.Fatalf("run(%v): %v", test.args, err)
+			}
+			if launch != nil {
+				t.Errorf("run(%v) launch = %v, want nil", test.args, launch)
+			}
+			if got := output.String(); got != test.want {
+				t.Errorf("run(%v) output = %q, want %q", test.args, got, test.want)
+			}
+			if _, err := os.Stat(paths.Directory); !os.IsNotExist(err) {
+				t.Errorf("storage directory stat error = %v, want not exist", err)
+			}
+		})
+	}
+}
+
 func TestRunResetClearsOnlyRequestedEnvironment(t *testing.T) {
 	configDirectory := t.TempDir()
 	productionPaths, err := store.PathsFor(configDirectory, "tpb")

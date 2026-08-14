@@ -44,6 +44,7 @@ Requirements: Go `1.26.6`, macOS, or Linux.
 git clone git@github.com:evanjhopkins/terminal-paste-bin.git
 cd terminal-paste-bin
 go build -o bin/tpb ./cmd/tpb
+./bin/tpb --help
 ./bin/tpb
 ```
 
