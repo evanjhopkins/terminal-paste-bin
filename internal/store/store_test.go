@@ -167,8 +167,8 @@ func TestStoreValidatesBinNamesAndSlots(t *testing.T) {
 }
 
 func TestMutationsWaitForExistingLock(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("advisory file locking is currently supported only on macOS")
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("advisory file locking is currently supported only on macOS and Linux")
 	}
 
 	paths, err := PathsFor(t.TempDir(), "tpb")

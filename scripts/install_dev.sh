@@ -2,10 +2,13 @@
 
 set -euo pipefail
 
-if [[ "$(uname -s)" != "Darwin" ]]; then
-	echo "install_dev.sh is intended for macOS." >&2
-	exit 1
-fi
+case "$(uname -s)" in
+	Darwin | Linux) ;;
+	*)
+		echo "install_dev.sh supports macOS and Linux." >&2
+		exit 1
+		;;
+esac
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 go_bin="$(go env GOBIN)"

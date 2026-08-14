@@ -19,15 +19,14 @@ go vet ./...
 go test ./...
 ```
 
-Install the current checkout as the `tpbd` development command on macOS:
+Install the current checkout as the `tpbd` development command on macOS or Linux:
 
 ```sh
 ./scripts/install_dev.sh
 ```
 
 The script installs to `GOBIN`, or to `$(go env GOPATH)/bin` when `GOBIN` is unset.
-Make sure that directory is on your `PATH`. For the default Go bin directory on
-macOS with zsh, add this to `~/.zshrc`:
+Make sure that directory is on your `PATH`. For zsh, add this to `~/.zshrc`:
 
 ```sh
 export PATH="$PATH:$HOME/go/bin"
