@@ -1,0 +1,40 @@
+# Terminal Paste Bin
+
+Terminal Paste Bin is a small Go command-line project with the executable name `tpb`.
+
+## Development
+
+Build and run the executable:
+
+```sh
+go build -o bin/tpb ./cmd/tpb
+./bin/tpb
+```
+
+Format, vet, and test the project:
+
+```sh
+go fmt ./...
+go vet ./...
+go test ./...
+```
+
+Install the current checkout as the `tpbd` development command on macOS:
+
+```sh
+./scripts/install_dev.sh
+```
+
+The script installs to `GOBIN`, or to `$(go env GOPATH)/bin` when `GOBIN` is unset.
+Make sure that directory is on your `PATH`. For the default Go bin directory on
+macOS with zsh, add this to `~/.zshrc`:
+
+```sh
+export PATH="$PATH:$HOME/go/bin"
+```
+
+Reload your shell configuration after making the change:
+
+```sh
+source ~/.zshrc
+```
