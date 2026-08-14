@@ -16,7 +16,11 @@ func main() {
 		launch, err = run(os.Args[1:], paths, os.Stdout)
 	}
 	if err == nil && launch != nil {
-		err = tui.Run(launch.name, launch.slots)
+		err = tui.Run(launch.name, launch.slots, tui.Actions{
+			DeleteSlot: func(slot int) error {
+				return deleteBinSlot(paths, launch.name, slot)
+			},
+		})
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "tpb:", err)
@@ -86,4 +90,12 @@ func loadBin(name string, paths store.Paths) (*binLaunch, error) {
 		}
 	}
 	return &binLaunch{name: name, slots: slots}, nil
+}
+
+func deleteBinSlot(paths store.Paths, binName string, slot int) error {
+	bins, err := store.Open(paths)
+	if err != nil {
+		return err
+	}
+	return bins.DeleteSlot(binName, slot)
 }

@@ -118,3 +118,31 @@ func TestRunLoadsDefaultAndNamedBins(t *testing.T) {
 		t.Errorf("ListBins() = %v, want %v", got, want)
 	}
 }
+
+func TestDeleteBinSlotPersistsDeletion(t *testing.T) {
+	paths, err := store.PathsFor(t.TempDir(), "tpb")
+	if err != nil {
+		t.Fatalf("PathsFor: %v", err)
+	}
+	bins, err := store.Open(paths)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if err := bins.EnsureBin("default"); err != nil {
+		t.Fatalf("EnsureBin: %v", err)
+	}
+	if err := bins.WriteSlot("default", 3, "value"); err != nil {
+		t.Fatalf("WriteSlot: %v", err)
+	}
+
+	if err := deleteBinSlot(paths, "default", 3); err != nil {
+		t.Fatalf("deleteBinSlot: %v", err)
+	}
+	reopened, err := store.Open(paths)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	if _, exists, err := reopened.ReadSlot("default", 3); err != nil || exists {
+		t.Errorf("deleted slot = (exists %t, err %v), want (false, nil)", exists, err)
+	}
+}

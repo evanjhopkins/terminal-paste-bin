@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -21,6 +22,45 @@ func TestEscapeQuits(t *testing.T) {
 	_, command := model.handleKey("esc")
 	if command == nil {
 		t.Fatal("Escape did not return a quit command")
+	}
+}
+
+func TestModelDeletesSelectedSlot(t *testing.T) {
+	deletedSlot := -1
+	model := NewWithActions("default", map[int]string{3: "value"}, Actions{
+		DeleteSlot: func(slot int) error {
+			deletedSlot = slot
+			return nil
+		},
+	})
+	selected, _ := model.handleKey("3")
+	updated, _ := selected.(Model).handleKey("d")
+	got := updated.(Model)
+
+	if deletedSlot != 3 {
+		t.Errorf("deleted slot = %d, want 3", deletedSlot)
+	}
+	if _, exists := got.slots[3]; exists {
+		t.Error("deleted slot still has an in-memory value")
+	}
+	if got.expanded || got.status != "Slot 3 cleared." {
+		t.Errorf("delete state = (expanded %t, status %q)", got.expanded, got.status)
+	}
+}
+
+func TestModelRetainsSlotWhenDeleteFails(t *testing.T) {
+	model := NewWithActions("default", map[int]string{3: "value"}, Actions{
+		DeleteSlot: func(int) error { return errors.New("disk unavailable") },
+	})
+	selected, _ := model.handleKey("3")
+	updated, _ := selected.(Model).handleKey("d")
+	got := updated.(Model)
+
+	if got.slots[3] != "value" {
+		t.Error("failed delete removed the slot value")
+	}
+	if !strings.Contains(got.status, "disk unavailable") {
+		t.Errorf("delete error status = %q", got.status)
 	}
 }
 

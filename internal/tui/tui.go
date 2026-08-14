@@ -18,11 +18,23 @@ type Model struct {
 	slots        map[int]string
 	selectedSlot int
 	expanded     bool
+	status       string
+	actions      Actions
 	width        int
+}
+
+// Actions contains operations the TUI can request from the application layer.
+type Actions struct {
+	DeleteSlot func(slot int) error
 }
 
 // New creates a compact slot-selection view for binName.
 func New(binName string, slots map[int]string) Model {
+	return NewWithActions(binName, slots, Actions{})
+}
+
+// NewWithActions creates a compact slot-selection view with application actions.
+func NewWithActions(binName string, slots map[int]string, actions Actions) Model {
 	values := make(map[int]string, 10)
 	for slot, value := range slots {
 		if slot >= 0 && slot <= 9 {
@@ -34,13 +46,14 @@ func New(binName string, slots map[int]string) Model {
 		binName:      binName,
 		slots:        values,
 		selectedSlot: -1,
+		actions:      actions,
 		width:        defaultWidth,
 	}
 }
 
 // Run starts the interactive TUI for a bin.
-func Run(binName string, slots map[int]string) error {
-	_, err := tea.NewProgram(New(binName, slots)).Run()
+func Run(binName string, slots map[int]string, actions Actions) error {
+	_, err := tea.NewProgram(NewWithActions(binName, slots, actions)).Run()
 	return err
 }
 
@@ -73,6 +86,9 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	if m.selectedSlot >= 0 {
+		if key == "d" {
+			return m.deleteSelectedSlot()
+		}
 		if !m.expanded && (key == "v" || key == "right") {
 			m.expanded = true
 			return m, nil
@@ -89,6 +105,21 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 	if len(key) == 1 && key[0] >= '0' && key[0] <= '9' {
 		m.selectSlot(int(key[0] - '0'))
 	}
+	return m, nil
+}
+
+func (m Model) deleteSelectedSlot() (tea.Model, tea.Cmd) {
+	if m.actions.DeleteSlot == nil {
+		return m, nil
+	}
+	if err := m.actions.DeleteSlot(m.selectedSlot); err != nil {
+		m.status = fmt.Sprintf("Error deleting slot %d: %v", m.selectedSlot, err)
+		return m, nil
+	}
+
+	delete(m.slots, m.selectedSlot)
+	m.expanded = false
+	m.status = fmt.Sprintf("Slot %d cleared.", m.selectedSlot)
 	return m, nil
 }
 
@@ -131,9 +162,12 @@ func (m Model) render() string {
 		}
 		fmt.Fprintf(&output, "%s %d  %s\n", marker, slot, preview(m.slots[slot], m.width-5))
 	}
+	if m.status != "" {
+		fmt.Fprintf(&output, "\n%s\n", m.status)
+	}
 
 	if m.selectedSlot >= 0 {
-		output.WriteString("\n↑/↓ move   1-0 select   →/v view   q quit\n")
+		output.WriteString("\n↑/↓ move   1-0 select   →/v view   d delete   q quit\n")
 	} else {
 		output.WriteString("\n↑/↓ move   1-0 select   q quit\n")
 	}
@@ -146,7 +180,7 @@ func (m Model) renderExpanded() string {
 		value = "<blank>"
 	}
 
-	return fmt.Sprintf("Slot %d\n\n%s\n\n1-0 select   ←/v collapse   q quit\n", m.selectedSlot, value)
+	return fmt.Sprintf("Slot %d\n\n%s\n\n1-0 select   ←/v collapse   d delete   q quit\n", m.selectedSlot, value)
 }
 
 func preview(value string, maxWidth int) string {
