@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="TPB is a tiny, persistent clipboard register for your terminal."
+    />
+    <title>tpb - Terminal Paste Bin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:ital@0;1&amp;family=Space+Grotesk:wght@400;500;600;700&amp;display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --ink: #15231d;
+        --muted: #607168;
+        --paper: #f4f2e9;
+        --paper-deep: #e6e2d5;
+        --terminal: #15231d;
+        --terminal-muted: #a6b9ad;
+        --lime: #d9ff5b;
+        --orange: #ff7546;
+        --line: rgba(21, 35, 29, 0.16);
+        --mono: "DM Mono", monospace;
+        --display: "Space Grotesk", sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+
+      html { scroll-behavior: smooth; }
+
+      body {
+        margin: 0;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 12% 5%, rgba(217, 255, 91, 0.45), transparent 21rem),
+          radial-gradient(circle at 87% 22%, rgba(255, 117, 70, 0.18), transparent 22rem),
+          var(--paper);
+        font-family: var(--display);
+      }
+
+      a { color: inherit; text-decoration: none; }
+
+      .wrap { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
+
+      .nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 24px 0;
+      }
+
+      .brand { display: flex; align-items: center; gap: 10px; font: 700 1.05rem var(--mono); }
+
+      .brand-mark {
+        display: grid;
+        place-items: center;
+        width: 31px;
+        height: 31px;
+        color: var(--lime);
+        background: var(--terminal);
+        border-radius: 7px;
+        box-shadow: 3px 3px 0 var(--orange);
+      }
+
+      .nav-links { display: flex; align-items: center; gap: 24px; font-size: 0.9rem; font-weight: 600; }
+      .nav-links a:not(.github):hover { color: var(--orange); }
+
+      .github {
+        padding: 9px 13px;
+        color: var(--paper);
+        background: var(--terminal);
+        border-radius: 6px;
+      }
+
+      .hero { padding: 78px 0 84px; }
+
+      .eyebrow {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        margin: 0 0 18px;
+        color: #4f604d;
+        font: 0.78rem var(--mono);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .eyebrow::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--orange); }
+
+      h1 {
+        max-width: 800px;
+        margin: 0;
+        font-size: clamp(3.6rem, 9vw, 7.7rem);
+        font-weight: 700;
+        line-height: 0.89;
+        letter-spacing: -0.075em;
+      }
+
+      h1 span { color: var(--orange); }
+
+      .hero-bottom {
+        display: grid;
+        grid-template-columns: 0.9fr 1.1fr;
+        gap: 52px;
+        align-items: end;
+        margin-top: 46px;
+      }
+
+      .lede { max-width: 420px; margin: 0; color: var(--muted); font-size: 1.22rem; line-height: 1.5; }
+      .lede code { color: var(--ink); font: 0.92em var(--mono); }
+
+      .install {
+        position: relative;
+        overflow: hidden;
+        padding: 18px 20px;
+        color: #dbe7d8;
+        background: var(--terminal);
+        border-radius: 12px;
+        box-shadow: 8px 8px 0 rgba(21, 35, 29, 0.16);
+      }
+
+      .install::after {
+        position: absolute;
+        right: -40px;
+        bottom: -75px;
+        width: 170px;
+        height: 170px;
+        content: "";
+        border: 26px solid rgba(217, 255, 91, 0.12);
+        border-radius: 50%;
+      }
+
+      .install-label { display: block; margin-bottom: 11px; color: var(--terminal-muted); font: 0.72rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+      .install code { position: relative; z-index: 1; color: var(--lime); font: 0.87rem/1.5 var(--mono); word-break: break-all; }
+
+      .terminal-section {
+        padding: 88px 0 106px;
+        color: var(--paper);
+        background: var(--terminal);
+      }
+
+      .section-tag { margin: 0 0 15px; color: var(--lime); font: 0.76rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+      h2 { max-width: 650px; margin: 0; font-size: clamp(2.1rem, 4.5vw, 4.2rem); line-height: 0.97; letter-spacing: -0.06em; }
+
+      .terminal-window {
+        position: relative;
+        max-width: 900px;
+        margin: 52px auto 0;
+        overflow: hidden;
+        border: 1px solid rgba(217, 255, 91, 0.25);
+        border-radius: 11px;
+        background: #0d1611;
+        box-shadow: 12px 12px 0 rgba(217, 255, 91, 0.17);
+        font-family: var(--mono);
+      }
+
+      .window-bar { display: flex; align-items: center; gap: 7px; padding: 13px 16px; border-bottom: 1px solid rgba(217, 255, 91, 0.16); }
+      .dot { width: 9px; height: 9px; border-radius: 50%; background: #637168; }
+      .dot:first-child { background: var(--orange); }
+      .dot:nth-child(2) { background: #ffc34d; }
+      .window-title { margin-left: 6px; color: var(--terminal-muted); font-size: 0.74rem; }
+
+      .terminal-content { padding: 26px clamp(18px, 4vw, 42px) 29px; font-size: clamp(0.76rem, 1.7vw, 0.98rem); line-height: 1.85; }
+      .prompt { color: var(--lime); }
+      .command { color: #fff; }
+      .terminal-title { display: block; margin: 17px 0 9px; color: #f7f8ed; }
+      .slot { display: block; color: var(--terminal-muted); }
+      .slot.active { margin: 2px -13px; padding: 1px 13px; color: var(--terminal); background: var(--lime); }
+      .hint { display: block; margin-top: 16px; color: #bfd3c3; font-size: 0.8em; }
+      .cursor { display: inline-block; width: 0.6em; height: 1.15em; margin-left: 4px; vertical-align: -0.23em; background: var(--lime); animation: blink 1s steps(2, jump-none) infinite; }
+
+      .features { padding: 105px 0; }
+      .feature-heading { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: end; padding-bottom: 42px; border-bottom: 1px solid var(--line); }
+      .feature-heading h2 { font-size: clamp(2.5rem, 5.5vw, 5rem); }
+      .feature-heading p { margin: 0; color: var(--muted); font-size: 1.13rem; line-height: 1.5; }
+
+      .feature-grid { display: grid; grid-template-columns: repeat(4, 1fr); }
+      .feature { min-height: 230px; padding: 28px 24px; border-right: 1px solid var(--line); }
+      .feature:first-child { padding-left: 0; }
+      .feature:last-child { border-right: 0; }
+      .feature-number { color: var(--orange); font: 0.78rem var(--mono); }
+      .feature h3 { margin: 42px 0 10px; font-size: 1.2rem; letter-spacing: -0.035em; }
+      .feature p { margin: 0; color: var(--muted); font-size: 0.95rem; line-height: 1.45; }
+
+      .workflow { padding: 85px 0; background: var(--paper-deep); }
+      .workflow-grid { display: grid; grid-template-columns: 0.75fr 1.25fr; gap: 72px; }
+      .workflow h2 { font-size: clamp(2.5rem, 5vw, 4.5rem); }
+      .workflow-intro { margin-top: 22px; color: var(--muted); line-height: 1.5; }
+      .steps { border-top: 1px solid var(--line); }
+      .step { display: grid; grid-template-columns: 42px 1fr; gap: 17px; padding: 22px 0; border-bottom: 1px solid var(--line); }
+      .step-no { color: var(--orange); font: 0.77rem var(--mono); }
+      .step h3 { margin: 0 0 5px; font-size: 1.1rem; }
+      .step p { margin: 0; color: var(--muted); line-height: 1.45; }
+      .step code { color: var(--ink); font-family: var(--mono); font-size: 0.88em; }
+
+      .footer { padding: 72px 0 32px; }
+      .footer-cta { display: flex; align-items: end; justify-content: space-between; gap: 28px; padding-bottom: 61px; border-bottom: 1px solid var(--line); }
+      .footer-cta h2 { max-width: 600px; font-size: clamp(2.6rem, 6vw, 5.5rem); }
+      .button { display: inline-block; flex: none; padding: 14px 18px; color: var(--terminal); background: var(--lime); border-radius: 7px; box-shadow: 4px 4px 0 var(--orange); font: 700 0.85rem var(--mono); transition: transform 160ms ease, box-shadow 160ms ease; }
+      .button:hover { transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--orange); }
+      .footer-note { display: flex; justify-content: space-between; padding-top: 24px; color: var(--muted); font: 0.76rem var(--mono); }
+
+      @keyframes blink { 50% { opacity: 0; } }
+
+      @media (max-width: 760px) {
+        .wrap { width: min(100% - 32px, 1120px); }
+        .nav-links a:not(.github) { display: none; }
+        .hero { padding: 55px 0 65px; }
+        .hero-bottom, .feature-heading, .workflow-grid { grid-template-columns: 1fr; gap: 28px; }
+        .feature-grid { grid-template-columns: 1fr 1fr; }
+        .feature { min-height: 185px; padding: 25px 18px; border-bottom: 1px solid var(--line); }
+        .feature:first-child { padding-left: 0; }
+        .feature:nth-child(2) { border-right: 0; }
+        .feature:nth-child(3) { padding-left: 0; }
+        .footer-cta { display: block; }
+        .footer-cta .button { margin-top: 29px; }
+      }
+
+      @media (max-width: 430px) {
+        .nav { padding: 18px 0; }
+        h1 { font-size: 3.55rem; }
+        .terminal-section, .features { padding: 66px 0; }
+        .feature-grid { grid-template-columns: 1fr; }
+        .feature { padding-left: 0; border-right: 0; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="wrap nav">
+      <a class="brand" href="#top" aria-label="TPB home"><span class="brand-mark">&gt;_</span> tpb</a>
+      <nav class="nav-links" aria-label="Main navigation">
+        <a href="#how-it-works">How it works</a>
+        <a href="#install">Install</a>
+        <a class="github" href="https://github.com/evanjhopkins/terminal-paste-bin">GitHub ↗</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="wrap hero">
+        <p class="eyebrow">Terminal Paste Bin</p>
+        <h1>Your clipboard<br />has <span>muscle memory.</span></h1>
+        <div class="hero-bottom">
+          <p class="lede">A tiny, persistent clipboard register for the text you reach for all day. Built for people who would rather press <code>3</code> than go hunting.</p>
+          <div class="install" id="install">
+            <span class="install-label">Install from source</span>
+            <code>go install github.com/evanjhopkins/terminal-paste-bin/cmd/tpb@latest</code>
+          </div>
+        </div>
+      </section>
+
+      <section class="terminal-section">
+        <div class="wrap">
+          <p class="section-tag">A place for the good stuff</p>
+          <h2>URLs. Commands. IDs.<br />Right where you left them.</h2>
+          <div class="terminal-window" aria-label="TPB terminal interface example">
+            <div class="window-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="window-title">tpb - myapp</span></div>
+            <div class="terminal-content">
+              <span class="prompt">$</span> <span class="command">tpb myapp</span>
+              <span class="terminal-title">Terminal Paste Bin - myapp</span>
+              <span class="slot">  1&nbsp;&nbsp;postgres://localhost:5432/myapp</span>
+              <span class="slot active">&gt; 2&nbsp;&nbsp;deploy@prod.example.com</span>
+              <span class="slot">  3&nbsp;&nbsp;{"customer":"cus_123","enabled":true}</span>
+              <span class="slot">  4&nbsp;&nbsp;&lt;blank&gt;</span>
+              <span class="slot">  5&nbsp;&nbsp;&lt;blank&gt;</span>
+              <span class="slot">  6&nbsp;&nbsp;&lt;blank&gt;</span>
+              <span class="slot">  7&nbsp;&nbsp;hello ↵ world</span>
+              <span class="slot">  8&nbsp;&nbsp;&lt;blank&gt;</span>
+              <span class="slot">  9&nbsp;&nbsp;&lt;blank&gt;</span>
+              <span class="slot">  0&nbsp;&nbsp;&lt;blank&gt;</span>
+              <span class="hint">↑/↓ move&nbsp;&nbsp; 1-0 select&nbsp;&nbsp; →/v view&nbsp;&nbsp; r read&nbsp;&nbsp; w write&nbsp;&nbsp; d delete&nbsp;&nbsp; q quit</span>
+              <span class="prompt">$</span><span class="cursor" aria-hidden="true"></span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="wrap features" id="how-it-works">
+        <div class="feature-heading">
+          <h2>Less clipboard archaeology.</h2>
+          <p>TPB keeps the useful fragments in predictable, keyboard-addressable slots. No daemon. No account. No context switch.</p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature"><span class="feature-number">01</span><h3>Ten slots, zero hunting.</h3><p>Slots map directly to <code>1</code> through <code>9</code>, then <code>0</code>. Your hands already know where to go.</p></article>
+          <article class="feature"><span class="feature-number">02</span><h3>Named bins.</h3><p>Keep <code>myapp</code>, <code>production</code>, and <code>scratch</code separate without changing your flow.</p></article>
+          <article class="feature"><span class="feature-number">03</span><h3>System clipboard in, out.</h3><p>Write your current clipboard to a slot, or read a slot directly back to the system clipboard.</p></article>
+          <article class="feature"><span class="feature-number">04</span><h3>Local by default.</h3><p>Small local JSON files. Atomic writes. Nothing leaves your machine.</p></article>
+        </div>
+      </section>
+
+      <section class="workflow">
+        <div class="wrap workflow-grid">
+          <div>
+            <p class="section-tag">The flow</p>
+            <h2>Keep it close.<br />Keep moving.</h2>
+            <p class="workflow-intro">Built for the small bits of text that interrupt real work when they disappear.</p>
+          </div>
+          <div class="steps">
+            <article class="step"><span class="step-no">01</span><div><h3>Open a bin</h3><p>Run <code>tpb</code> for your default register, or <code>tpb myapp</code> for a project-specific one.</p></div></article>
+            <article class="step"><span class="step-no">02</span><div><h3>Choose a slot</h3><p>Press a number or use the arrow keys. No mouse, no Enter, no ceremony.</p></div></article>
+            <article class="step"><span class="step-no">03</span><div><h3>Read or write</h3><p><code>w</code> saves the system clipboard. <code>r</code> copies the selected slot back when you need it.</p></div></article>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="wrap footer">
+      <div class="footer-cta">
+        <h2>Your terminal<br />deserves a better<br />junk drawer.</h2>
+        <a class="button" href="https://github.com/evanjhopkins/terminal-paste-bin">View the project ↗</a>
+      </div>
+      <div class="footer-note"><span>tpb / terminal paste bin</span><span>macOS + Linux / MIT</span></div>
+    </footer>
+  </body>
+</html>
