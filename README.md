@@ -4,12 +4,14 @@ Terminal Paste Bin is a small Go command-line project with the executable name `
 
 ## Development
 
-Build and run the executable:
+Build and list existing bins:
 
 ```sh
 go build -o bin/tpb ./cmd/tpb
-./bin/tpb
+./bin/tpb list
 ```
+
+`tpb list` is the only interactive command implemented so far.
 
 Format, vet, and test the project:
 
