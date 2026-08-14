@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -25,7 +26,7 @@ func TestRunListsBinsInAlphabeticalOrder(t *testing.T) {
 	}
 
 	var output bytes.Buffer
-	if err := run([]string{"list"}, paths, &output); err != nil {
+	if _, err := run([]string{"list"}, paths, &output); err != nil {
 		t.Fatalf("run list: %v", err)
 	}
 	if got, want := output.String(), "alpha\nzeta\n"; got != want {
@@ -39,9 +40,9 @@ func TestRunRejectsUnavailableCommands(t *testing.T) {
 		t.Fatalf("PathsFor: %v", err)
 	}
 
-	for _, args := range [][]string{nil, {"myapp"}, {"list", "extra"}} {
-		err := run(args, paths, &bytes.Buffer{})
-		if err == nil || !strings.Contains(err.Error(), "only \"tpb list\" and \"tpb reset\"") {
+	for _, args := range [][]string{{"list", "extra"}, {"one", "two"}} {
+		_, err := run(args, paths, &bytes.Buffer{})
+		if err == nil || !strings.Contains(err.Error(), "usage: tpb") {
 			t.Errorf("run(%v) error = %v, want unavailable-command error", args, err)
 		}
 	}
@@ -71,7 +72,7 @@ func TestRunResetClearsOnlyRequestedEnvironment(t *testing.T) {
 	}
 
 	var output bytes.Buffer
-	if err := run([]string{"reset"}, developmentPaths, &output); err != nil {
+	if _, err := run([]string{"reset"}, developmentPaths, &output); err != nil {
 		t.Fatalf("run reset: %v", err)
 	}
 	if got, want := output.String(), "Reset complete.\n"; got != want {
@@ -90,5 +91,30 @@ func TestRunResetClearsOnlyRequestedEnvironment(t *testing.T) {
 	value, exists, err := production.ReadSlot("default", 1)
 	if err != nil || !exists || value != productionPaths.Directory {
 		t.Errorf("production slot = (%q, %t, %v), want (%q, true, nil)", value, exists, err, productionPaths.Directory)
+	}
+}
+
+func TestRunLoadsDefaultAndNamedBins(t *testing.T) {
+	paths, err := store.PathsFor(t.TempDir(), "tpb")
+	if err != nil {
+		t.Fatalf("PathsFor: %v", err)
+	}
+
+	for _, args := range [][]string{nil, {"myapp"}} {
+		launch, err := run(args, paths, &bytes.Buffer{})
+		if err != nil {
+			t.Fatalf("run(%v): %v", args, err)
+		}
+		if launch == nil {
+			t.Fatalf("run(%v) did not prepare a bin", args)
+		}
+	}
+
+	bins, err := store.Open(paths)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if got, want := bins.ListBins(), []string{"default", "myapp"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("ListBins() = %v, want %v", got, want)
 	}
 }

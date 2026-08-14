@@ -146,7 +146,7 @@ func (s *Store) DeleteSlot(binName string, slot int) error {
 
 // ValidateBinName applies the initial conservative bin-name policy.
 func ValidateBinName(name string) error {
-	if name == "" || name == "list" || len(name) > maxBinNameLength || !utf8.ValidString(name) {
+	if name == "" || name == "list" || name == "reset" || len(name) > maxBinNameLength || !utf8.ValidString(name) {
 		return fmt.Errorf("%w: %q", ErrInvalidBinName, name)
 	}
 	for _, character := range name {
