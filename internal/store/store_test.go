@@ -4,8 +4,10 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestStorePersistsBinsAndSlots(t *testing.T) {
@@ -161,5 +163,97 @@ func TestStoreValidatesBinNamesAndSlots(t *testing.T) {
 	}
 	if _, _, err := store.ReadSlot("missing", 1); !errors.Is(err, ErrBinNotFound) {
 		t.Errorf("ReadSlot missing bin error = %v, want ErrBinNotFound", err)
+	}
+}
+
+func TestMutationsWaitForExistingLock(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("advisory file locking is currently supported only on macOS")
+	}
+
+	paths, err := PathsFor(t.TempDir(), "tpb")
+	if err != nil {
+		t.Fatalf("PathsFor: %v", err)
+	}
+	first, err := Open(paths)
+	if err != nil {
+		t.Fatalf("Open first store: %v", err)
+	}
+	if err := first.EnsureBin("default"); err != nil {
+		t.Fatalf("EnsureBin: %v", err)
+	}
+	second, err := Open(paths)
+	if err != nil {
+		t.Fatalf("Open second store: %v", err)
+	}
+
+	lock, err := acquireFileLock(paths.LockFile)
+	if err != nil {
+		t.Fatalf("acquireFileLock: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- second.WriteSlot("default", 1, "saved")
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("WriteSlot completed while lock was held: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	if err := releaseFileLock(lock); err != nil {
+		t.Fatalf("releaseFileLock: %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("WriteSlot: %v", err)
+	}
+	reopened, err := Open(paths)
+	if err != nil {
+		t.Fatalf("reopen store: %v", err)
+	}
+	if value, exists, err := reopened.ReadSlot("default", 1); err != nil || !exists || value != "saved" {
+		t.Errorf("persisted slot = (%q, %t, %v), want (saved, true, nil)", value, exists, err)
+	}
+}
+
+func TestMutationsReloadCurrentBinsBeforeSaving(t *testing.T) {
+	paths, err := PathsFor(t.TempDir(), "tpb")
+	if err != nil {
+		t.Fatalf("PathsFor: %v", err)
+	}
+	first, err := Open(paths)
+	if err != nil {
+		t.Fatalf("Open first store: %v", err)
+	}
+	if err := first.EnsureBin("default"); err != nil {
+		t.Fatalf("EnsureBin: %v", err)
+	}
+	second, err := Open(paths)
+	if err != nil {
+		t.Fatalf("Open second store: %v", err)
+	}
+
+	if err := first.WriteSlot("default", 1, "first"); err != nil {
+		t.Fatalf("first WriteSlot: %v", err)
+	}
+	if err := second.WriteSlot("default", 2, "second"); err != nil {
+		t.Fatalf("second WriteSlot: %v", err)
+	}
+
+	reopened, err := Open(paths)
+	if err != nil {
+		t.Fatalf("reopen store: %v", err)
+	}
+	for _, expected := range []struct {
+		slot  int
+		value string
+	}{
+		{slot: 1, value: "first"},
+		{slot: 2, value: "second"},
+	} {
+		value, exists, err := reopened.ReadSlot("default", expected.slot)
+		if err != nil || !exists || value != expected.value {
+			t.Errorf("slot %d = (%q, %t, %v), want (%q, true, nil)", expected.slot, value, exists, err, expected.value)
+		}
 	}
 }

@@ -16,6 +16,7 @@ type Paths struct {
 	Directory  string
 	BinsFile   string
 	ConfigFile string
+	LockFile   string
 }
 
 // DefaultPaths resolves the storage directory from the user's OS configuration
@@ -46,6 +47,7 @@ func PathsFor(configDirectory, executable string) (Paths, error) {
 		Directory:  directory,
 		BinsFile:   filepath.Join(directory, "bins.json"),
 		ConfigFile: filepath.Join(directory, "config.json"),
+		LockFile:   filepath.Join(directory, "bins.lock"),
 	}, nil
 }
 

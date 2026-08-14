@@ -35,16 +35,23 @@ func Open(paths Paths) (*Store, error) {
 		return nil, fmt.Errorf("create storage directory: %w", err)
 	}
 
-	if err := ensureConfigFile(paths.ConfigFile); err != nil {
+	store := &Store{paths: paths}
+	if err := withFileLock(paths.LockFile, func() error {
+		if err := ensureConfigFile(paths.ConfigFile); err != nil {
+			return err
+		}
+
+		bins, err := loadBins(paths.BinsFile)
+		if err != nil {
+			return err
+		}
+		store.bins = bins
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 
-	bins, err := loadBins(paths.BinsFile)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Store{paths: paths, bins: bins}, nil
+	return store, nil
 }
 
 // EnsureBin creates a blank bin if it does not already exist.
@@ -52,12 +59,12 @@ func (s *Store) EnsureBin(name string) error {
 	if err := ValidateBinName(name); err != nil {
 		return err
 	}
-	if _, exists := s.bins[name]; exists {
+	return s.update(func(bins map[string]bin) error {
+		if _, exists := bins[name]; !exists {
+			bins[name] = bin{Slots: make(map[int]string)}
+		}
 		return nil
-	}
-
-	s.bins[name] = bin{Slots: make(map[int]string)}
-	return s.save()
+	})
 }
 
 // ListBins returns bin names in alphabetical order.
@@ -91,14 +98,16 @@ func (s *Store) WriteSlot(binName string, slot int, value string) error {
 		return err
 	}
 
-	bin, exists := s.bins[binName]
-	if !exists {
-		return fmt.Errorf("%w: %s", ErrBinNotFound, binName)
-	}
+	return s.update(func(bins map[string]bin) error {
+		bin, exists := bins[binName]
+		if !exists {
+			return fmt.Errorf("%w: %s", ErrBinNotFound, binName)
+		}
 
-	bin.Slots[slot] = value
-	s.bins[binName] = bin
-	return s.save()
+		bin.Slots[slot] = value
+		bins[binName] = bin
+		return nil
+	})
 }
 
 // DeleteSlot clears a slot. Deleting an already blank slot is successful.
@@ -107,14 +116,16 @@ func (s *Store) DeleteSlot(binName string, slot int) error {
 		return err
 	}
 
-	bin, exists := s.bins[binName]
-	if !exists {
-		return fmt.Errorf("%w: %s", ErrBinNotFound, binName)
-	}
+	return s.update(func(bins map[string]bin) error {
+		bin, exists := bins[binName]
+		if !exists {
+			return fmt.Errorf("%w: %s", ErrBinNotFound, binName)
+		}
 
-	delete(bin.Slots, slot)
-	s.bins[binName] = bin
-	return s.save()
+		delete(bin.Slots, slot)
+		bins[binName] = bin
+		return nil
+	})
 }
 
 // ValidateBinName applies the initial conservative bin-name policy.
@@ -189,8 +200,21 @@ func loadBins(path string) (map[string]bin, error) {
 	return bins, nil
 }
 
-func (s *Store) save() error {
-	return saveBins(s.paths.BinsFile, s.bins)
+func (s *Store) update(change func(map[string]bin) error) error {
+	return withFileLock(s.paths.LockFile, func() error {
+		bins, err := loadBins(s.paths.BinsFile)
+		if err != nil {
+			return err
+		}
+		if err := change(bins); err != nil {
+			return err
+		}
+		if err := saveBins(s.paths.BinsFile, bins); err != nil {
+			return err
+		}
+		s.bins = bins
+		return nil
+	})
 }
 
 func saveBins(path string, bins map[string]bin) error {
