@@ -64,6 +64,44 @@ func TestModelRetainsSlotWhenDeleteFails(t *testing.T) {
 	}
 }
 
+func TestModelWritesSelectedSlotAndQuits(t *testing.T) {
+	writtenSlot := -1
+	model := NewWithActions("default", nil, Actions{
+		WriteSlot: func(slot int) error {
+			writtenSlot = slot
+			return nil
+		},
+	})
+	selected, _ := model.handleKey("3")
+	_, command := selected.(Model).handleKey("w")
+
+	if writtenSlot != 3 {
+		t.Errorf("written slot = %d, want 3", writtenSlot)
+	}
+	if command == nil {
+		t.Fatal("successful write did not return a quit command")
+	}
+}
+
+func TestModelStaysOpenWhenWriteFails(t *testing.T) {
+	model := NewWithActions("default", nil, Actions{
+		WriteSlot: func(int) error { return errors.New("clipboard unavailable") },
+	})
+	selected, _ := model.handleKey("3")
+	updated, command := selected.(Model).handleKey("w")
+	got := updated.(Model)
+
+	if command != nil {
+		t.Error("failed write returned a quit command")
+	}
+	if !strings.Contains(got.status, "clipboard unavailable") {
+		t.Errorf("write error status = %q", got.status)
+	}
+	if got.expanded {
+		t.Error("failed write remained in the expanded view")
+	}
+}
+
 func TestModelTogglesExpandedView(t *testing.T) {
 	model := New("default", map[int]string{3: "hello\nworld"})
 	selected, _ := model.handleKey("3")

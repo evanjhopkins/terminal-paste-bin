@@ -19,7 +19,7 @@ Reset all persisted data for the current environment:
 
 `tpbd reset` clears only development data; `tpb reset` clears only production data. Reset has no confirmation prompt.
 
-Run `tpb` for the default bin or `tpb <name>` for a named bin. The TUI supports selection, full-value viewing, and deleting slots; clipboard actions are still pending.
+Run `tpb` for the default bin or `tpb <name>` for a named bin. The TUI supports selection, full-value viewing, deleting slots, and writing the system clipboard into a slot; copying slots back to the clipboard is still pending.
 
 Format, vet, and test the project:
 

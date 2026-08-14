@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/evanjhopkins/terminal-paste-bin/internal/clipboard"
 	"github.com/evanjhopkins/terminal-paste-bin/internal/store"
 	"github.com/evanjhopkins/terminal-paste-bin/internal/tui"
 )
@@ -16,9 +17,13 @@ func main() {
 		launch, err = run(os.Args[1:], paths, os.Stdout)
 	}
 	if err == nil && launch != nil {
+		systemClipboard := clipboard.New()
 		err = tui.Run(launch.name, launch.slots, tui.Actions{
 			DeleteSlot: func(slot int) error {
 				return deleteBinSlot(paths, launch.name, slot)
+			},
+			WriteSlot: func(slot int) error {
+				return writeClipboardToSlot(paths, launch.name, slot, systemClipboard)
 			},
 		})
 	}
@@ -98,4 +103,17 @@ func deleteBinSlot(paths store.Paths, binName string, slot int) error {
 		return err
 	}
 	return bins.DeleteSlot(binName, slot)
+}
+
+func writeClipboardToSlot(paths store.Paths, binName string, slot int, reader clipboard.Reader) error {
+	value, err := reader.Read()
+	if err != nil {
+		return err
+	}
+
+	bins, err := store.Open(paths)
+	if err != nil {
+		return err
+	}
+	return bins.WriteSlot(binName, slot, value)
 }

@@ -26,6 +26,7 @@ type Model struct {
 // Actions contains operations the TUI can request from the application layer.
 type Actions struct {
 	DeleteSlot func(slot int) error
+	WriteSlot  func(slot int) error
 }
 
 // New creates a compact slot-selection view for binName.
@@ -89,6 +90,9 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 		if key == "d" {
 			return m.deleteSelectedSlot()
 		}
+		if key == "w" {
+			return m.writeSelectedSlot()
+		}
 		if !m.expanded && (key == "v" || key == "right") {
 			m.expanded = true
 			return m, nil
@@ -113,6 +117,7 @@ func (m Model) deleteSelectedSlot() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if err := m.actions.DeleteSlot(m.selectedSlot); err != nil {
+		m.expanded = false
 		m.status = fmt.Sprintf("Error deleting slot %d: %v", m.selectedSlot, err)
 		return m, nil
 	}
@@ -121,6 +126,18 @@ func (m Model) deleteSelectedSlot() (tea.Model, tea.Cmd) {
 	m.expanded = false
 	m.status = fmt.Sprintf("Slot %d cleared.", m.selectedSlot)
 	return m, nil
+}
+
+func (m Model) writeSelectedSlot() (tea.Model, tea.Cmd) {
+	if m.actions.WriteSlot == nil {
+		return m, nil
+	}
+	if err := m.actions.WriteSlot(m.selectedSlot); err != nil {
+		m.expanded = false
+		m.status = fmt.Sprintf("Error writing slot %d: %v", m.selectedSlot, err)
+		return m, nil
+	}
+	return m, tea.Quit
 }
 
 func (m *Model) moveSelection(direction string) {
@@ -145,6 +162,7 @@ func (m *Model) moveSelection(direction string) {
 func (m *Model) selectSlot(slot int) {
 	m.selectedSlot = slot
 	m.expanded = false
+	m.status = ""
 }
 
 func (m Model) render() string {
@@ -167,7 +185,7 @@ func (m Model) render() string {
 	}
 
 	if m.selectedSlot >= 0 {
-		output.WriteString("\n↑/↓ move   1-0 select   →/v view   d delete   q quit\n")
+		output.WriteString("\n↑/↓ move   1-0 select   →/v view   w write   d delete   q quit\n")
 	} else {
 		output.WriteString("\n↑/↓ move   1-0 select   q quit\n")
 	}
@@ -180,7 +198,7 @@ func (m Model) renderExpanded() string {
 		value = "<blank>"
 	}
 
-	return fmt.Sprintf("Slot %d\n\n%s\n\n1-0 select   ←/v collapse   d delete   q quit\n", m.selectedSlot, value)
+	return fmt.Sprintf("Slot %d\n\n%s\n\n1-0 select   ←/v collapse   w write   d delete   q quit\n", m.selectedSlot, value)
 }
 
 func preview(value string, maxWidth int) string {

@@ -146,3 +146,39 @@ func TestDeleteBinSlotPersistsDeletion(t *testing.T) {
 		t.Errorf("deleted slot = (exists %t, err %v), want (false, nil)", exists, err)
 	}
 }
+
+func TestWriteClipboardToSlotPreservesContents(t *testing.T) {
+	paths, err := store.PathsFor(t.TempDir(), "tpb")
+	if err != nil {
+		t.Fatalf("PathsFor: %v", err)
+	}
+	bins, err := store.Open(paths)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if err := bins.EnsureBin("default"); err != nil {
+		t.Fatalf("EnsureBin: %v", err)
+	}
+
+	want := "hello\n\u4e16\u754c\n"
+	if err := writeClipboardToSlot(paths, "default", 3, fakeClipboard{value: want}); err != nil {
+		t.Fatalf("writeClipboardToSlot: %v", err)
+	}
+	reopened, err := store.Open(paths)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	got, exists, err := reopened.ReadSlot("default", 3)
+	if err != nil || !exists || got != want {
+		t.Errorf("stored slot = (%q, %t, %v), want (%q, true, nil)", got, exists, err, want)
+	}
+}
+
+type fakeClipboard struct {
+	value string
+	err   error
+}
+
+func (c fakeClipboard) Read() (string, error) {
+	return c.value, c.err
+}
