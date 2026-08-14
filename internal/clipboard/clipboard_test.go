@@ -60,3 +60,33 @@ func TestCommandClipboardWritesContentsUnchanged(t *testing.T) {
 		t.Errorf("written value = %q, want %q", written, want)
 	}
 }
+
+func TestCommandClipboardWriteWrapsErrors(t *testing.T) {
+	writer := commandClipboard{
+		writeName: "fake-clipboard",
+		runInput: func(string, []string, io.Reader) error {
+			return errors.New("not available")
+		},
+	}
+
+	err := writer.Write("value")
+	if err == nil || !strings.Contains(err.Error(), "fake-clipboard") {
+		t.Errorf("Write error = %v, want command context", err)
+	}
+}
+
+func TestUnavailableClipboardReturnsActionableErrors(t *testing.T) {
+	clipboard := unavailableClipboard{reason: "install a clipboard command"}
+	for _, operation := range []func() error{
+		func() error {
+			_, err := clipboard.Read()
+			return err
+		},
+		func() error { return clipboard.Write("value") },
+	} {
+		err := operation()
+		if err == nil || !strings.Contains(err.Error(), "install a clipboard command") {
+			t.Errorf("clipboard error = %v, want actionable guidance", err)
+		}
+	}
+}

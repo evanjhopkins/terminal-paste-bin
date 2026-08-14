@@ -103,6 +103,33 @@ func TestModelStaysOpenWhenWriteFails(t *testing.T) {
 	}
 }
 
+func TestActionFailuresReturnToVisibleCompactView(t *testing.T) {
+	actions := Actions{
+		DeleteSlot: func(int) error { return errors.New("delete failed") },
+		WriteSlot:  func(int) error { return errors.New("write failed") },
+		CopySlot:   func(int) (bool, error) { return false, errors.New("read failed") },
+	}
+	for _, key := range []string{"d", "w", "r"} {
+		t.Run(key, func(t *testing.T) {
+			model := NewWithActions("default", map[int]string{3: "value"}, actions)
+			selected, _ := model.handleKey("3")
+			expanded, _ := selected.(Model).handleKey("v")
+			updated, command := expanded.(Model).handleKey(key)
+			got := updated.(Model)
+
+			if command != nil {
+				t.Error("failed action returned a quit command")
+			}
+			if got.expanded {
+				t.Error("failed action remained in the expanded view")
+			}
+			if !strings.Contains(got.View().Content, "Error") {
+				t.Errorf("compact view did not render the error status: %q", got.View().Content)
+			}
+		})
+	}
+}
+
 func TestModelCopiesSelectedSlotAndQuits(t *testing.T) {
 	copiedSlot := -1
 	model := NewWithActions("default", nil, Actions{
