@@ -3,3 +3,4 @@ bin/
 .gomodcache/
 .tmp/
 /tpb
+docs/
