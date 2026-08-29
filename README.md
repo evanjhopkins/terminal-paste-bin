@@ -26,7 +26,7 @@ Terminal Paste Bin - myapp
   9  <blank>
   0  <blank>
 
-↑/↓ move   1-0 select   →/v view   r read   w write   d delete   q quit
+↑/↓ move   1-0 select   →/v view   r read   w write   x execute   d delete   q quit
 ```
 
 ## Why TPB?
@@ -71,10 +71,13 @@ tpb .
 | `←` / `v` | Return to the compact list |
 | `r` | Copy the selected slot to the system clipboard and exit |
 | `w` | Save the current system clipboard into the selected slot and exit |
+| `x` | Execute the selected slot through your shell and exit |
 | `d` | Delete the selected slot |
 | `q` / `Esc` | Quit |
 
 Reading a blank slot leaves your existing clipboard untouched.
+
+Executing a blank slot leaves TPB open. Commands run without a confirmation prompt: directory bins run in their stored directory, while named bins run in the directory where you launched `tpb`.
 
 ## Clipboard Support
 

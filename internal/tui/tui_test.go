@@ -172,6 +172,34 @@ func TestModelLeavesClipboardUntouchedForBlankSlot(t *testing.T) {
 	}
 }
 
+func TestModelExecutesSelectedSlotAndQuits(t *testing.T) {
+	model := New("default", map[int]string{3: "go test ./..."})
+	selected, _ := model.handleKey("3")
+	updated, command := selected.(Model).handleKey("x")
+	got := updated.(Model)
+
+	if command == nil {
+		t.Fatal("execute did not return a quit command")
+	}
+	if !got.execute || got.command != "go test ./..." {
+		t.Errorf("execute state = (%t, %q), want (true, go test ./...)", got.execute, got.command)
+	}
+}
+
+func TestModelStaysOpenWhenExecutingBlankSlot(t *testing.T) {
+	model := New("default", nil)
+	selected, _ := model.handleKey("3")
+	updated, command := selected.(Model).handleKey("x")
+	got := updated.(Model)
+
+	if command != nil {
+		t.Error("blank execute returned a quit command")
+	}
+	if got.execute || got.status != "Slot 3 is blank." {
+		t.Errorf("blank execute state = (%t, %q)", got.execute, got.status)
+	}
+}
+
 func TestModelTogglesExpandedView(t *testing.T) {
 	model := New("default", map[int]string{3: "hello\nworld"})
 	selected, _ := model.handleKey("3")

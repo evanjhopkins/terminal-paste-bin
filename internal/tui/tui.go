@@ -30,6 +30,8 @@ type Model struct {
 	status       string
 	actions      Actions
 	width        int
+	execute      bool
+	command      string
 }
 
 // Actions contains operations the TUI can request from the application layer.
@@ -68,10 +70,23 @@ func NewWithDetails(binName, directory string, slots map[int]string, actions Act
 	}
 }
 
+// Result describes an action requested after the TUI has exited.
+type Result struct {
+	Execute bool
+	Command string
+}
+
 // Run starts the interactive TUI for a bin.
-func Run(binName, directory string, slots map[int]string, actions Actions) error {
-	_, err := tea.NewProgram(NewWithDetails(binName, directory, slots, actions)).Run()
-	return err
+func Run(binName, directory string, slots map[int]string, actions Actions) (Result, error) {
+	finalModel, err := tea.NewProgram(NewWithDetails(binName, directory, slots, actions)).Run()
+	if err != nil {
+		return Result{}, err
+	}
+	model, ok := finalModel.(Model)
+	if !ok {
+		return Result{}, fmt.Errorf("unexpected final TUI model %T", finalModel)
+	}
+	return Result{Execute: model.execute, Command: model.command}, nil
 }
 
 // Init performs no startup work.
@@ -111,6 +126,9 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 		}
 		if key == "r" {
 			return m.copySelectedSlot()
+		}
+		if key == "x" {
+			return m.executeSelectedSlot()
 		}
 		if !m.expanded && (key == "v" || key == "right") {
 			m.expanded = true
@@ -177,6 +195,18 @@ func (m Model) copySelectedSlot() (tea.Model, tea.Cmd) {
 	return m, tea.Quit
 }
 
+func (m Model) executeSelectedSlot() (tea.Model, tea.Cmd) {
+	command, exists := m.slots[m.selectedSlot]
+	if !exists || command == "" {
+		m.expanded = false
+		m.status = fmt.Sprintf("Slot %d is blank.", m.selectedSlot)
+		return m, nil
+	}
+	m.command = command
+	m.execute = true
+	return m, tea.Quit
+}
+
 func (m *Model) moveSelection(direction string) {
 	if m.selectedSlot < 0 {
 		m.selectSlot(slotOrder[0])
@@ -226,7 +256,7 @@ func (m Model) render() string {
 	}
 
 	if m.selectedSlot >= 0 {
-		output.WriteString("\n↑/↓ move   1-0 select   →/v view   r read   w write   d delete   q quit\n")
+		output.WriteString("\n↑/↓ move   1-0 select   →/v view   r read   w write   x execute   d delete   q quit\n")
 	} else {
 		output.WriteString("\n↑/↓ move   1-0 select   q quit\n")
 	}
@@ -239,7 +269,7 @@ func (m Model) renderExpanded() string {
 		value = "<blank>"
 	}
 
-	return fmt.Sprintf("%s\n\nSlot %d\n\n%s\n\n1-0 select   ←/v collapse   r read   w write   d delete   q quit\n", m.renderBinHeader(), m.selectedSlot, value)
+	return fmt.Sprintf("%s\n\nSlot %d\n\n%s\n\n1-0 select   ←/v collapse   r read   w write   x execute   d delete   q quit\n", m.renderBinHeader(), m.selectedSlot, value)
 }
 
 func (m Model) renderBinHeader() string {

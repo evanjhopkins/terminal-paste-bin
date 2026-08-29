@@ -199,6 +199,27 @@ func TestRunOpensCanonicalDirectoryBin(t *testing.T) {
 	}
 }
 
+func TestExecuteCommandUsesDirectoryBinWorkingDirectory(t *testing.T) {
+	directory := t.TempDir()
+	outputPath := filepath.Join(t.TempDir(), "working-directory")
+	t.Setenv("SHELL", "/bin/sh")
+
+	if err := executeCommand("pwd > "+shellQuote(outputPath), directory); err != nil {
+		t.Fatalf("executeCommand: %v", err)
+	}
+	contents, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read command output: %v", err)
+	}
+	if got, want := strings.TrimSpace(string(contents)), directory; got != want {
+		t.Errorf("command working directory = %q, want %q", got, want)
+	}
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\\"'\\\"'") + "'"
+}
+
 func TestDeleteBinSlotPersistsDeletion(t *testing.T) {
 	paths, err := store.PathsFor(t.TempDir(), "tpb")
 	if err != nil {

@@ -1,9 +1,11 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/evanjhopkins/terminal-paste-bin/internal/clipboard"
@@ -41,7 +43,7 @@ func main() {
 	}
 	if err == nil && launch != nil {
 		systemClipboard := clipboard.New()
-		err = tui.Run(launch.name, launch.directory, launch.slots, tui.Actions{
+		result, runErr := tui.Run(launch.name, launch.directory, launch.slots, tui.Actions{
 			DeleteSlot: func(slot int) error {
 				return deleteBinSlot(paths, launch.id, slot)
 			},
@@ -52,11 +54,33 @@ func main() {
 				return copySlotToClipboard(paths, launch.id, slot, systemClipboard)
 			},
 		})
+		err = runErr
+		if err == nil && result.Execute {
+			err = executeCommand(result.Command, launch.directory)
+		}
 	}
 	if err != nil {
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) {
+			os.Exit(exitError.ExitCode())
+		}
 		fmt.Fprintln(os.Stderr, "tpb:", err)
 		os.Exit(1)
 	}
+}
+
+func executeCommand(command, directory string) error {
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+
+	execution := exec.Command(shell, "-c", command)
+	execution.Dir = directory
+	execution.Stdin = os.Stdin
+	execution.Stdout = os.Stdout
+	execution.Stderr = os.Stderr
+	return execution.Run()
 }
 
 type binLaunch struct {
