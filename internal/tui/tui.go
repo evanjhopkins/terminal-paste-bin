@@ -13,6 +13,13 @@ const defaultWidth = 80
 
 var slotOrder = [10]int{1, 2, 3, 4, 5, 6, 7, 8, 9, 0}
 
+const (
+	// Bright cyan comes from the user's ANSI color palette rather than a fixed
+	// RGB value, so the selected text follows their terminal theme.
+	selectedRowStart = "\x1b[1;36m"
+	selectedRowEnd   = "\x1b[0m"
+)
+
 // Model is the interactive state for a single TPB bin.
 type Model struct {
 	binName      string
@@ -201,7 +208,11 @@ func (m Model) render() string {
 		if m.selectedSlot == slot {
 			marker = ">"
 		}
-		fmt.Fprintf(&output, "%s %d  %s\n", marker, slot, preview(m.slots[slot], m.width-5))
+		row := fmt.Sprintf("%s %d  %s", marker, slot, preview(m.slots[slot], m.width-5))
+		if m.selectedSlot == slot {
+			row = selectedRowStart + row + selectedRowEnd
+		}
+		fmt.Fprintln(&output, row)
 	}
 	if m.status != "" {
 		fmt.Fprintf(&output, "\n%s\n", m.status)

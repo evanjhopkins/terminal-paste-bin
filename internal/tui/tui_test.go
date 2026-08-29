@@ -264,6 +264,19 @@ func TestModelRendersOneLinePreviews(t *testing.T) {
 	}
 }
 
+func TestModelHighlightsOnlyTheSelectedRow(t *testing.T) {
+	model := New("default", map[int]string{3: "value"})
+	selected, _ := model.handleKey("3")
+	view := selected.(Model).View().Content
+
+	if !strings.Contains(view, selectedRowStart+"> 3  value"+selectedRowEnd) {
+		t.Errorf("selected row was not color highlighted: %q", view)
+	}
+	if strings.Contains(view, selectedRowStart+"  2") {
+		t.Errorf("unselected row was highlighted: %q", view)
+	}
+}
+
 func TestPreviewTruncatesToAvailableWidth(t *testing.T) {
 	if got, want := preview("abcdefgh", 6), "abc..."; got != want {
 		t.Errorf("preview = %q, want %q", got, want)
