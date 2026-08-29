@@ -55,6 +55,12 @@ tpb myapp
 tpb list
 ```
 
+Open a bin scoped to the current directory:
+
+```sh
+tpb .
+```
+
 ## Keybindings
 
 | Key | Action |

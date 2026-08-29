@@ -264,6 +264,38 @@ func TestModelRendersOneLinePreviews(t *testing.T) {
 	}
 }
 
+func TestModelRendersTruncatedDirectoryContext(t *testing.T) {
+	directory := "/Users/evanhopkins/code/projects/terminal-paste-bin"
+	model := NewWithDetails("current directory", directory, nil, Actions{})
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 28})
+	view := updated.(Model).View().Content
+
+	if !strings.Contains(view, "Terminal Paste Bin - current directory") {
+		t.Errorf("directory view missing label: %q", view)
+	}
+	pathPreview := truncatePath(directory, 28)
+	if !strings.Contains(view, pathPreview) {
+		t.Errorf("directory view missing truncated path: %q", view)
+	}
+
+	selected, _ := updated.(Model).handleKey("3")
+	expanded, _ := selected.(Model).handleKey("v")
+	if view := expanded.(Model).View().Content; !strings.Contains(view, pathPreview) {
+		t.Errorf("expanded directory view missing path: %q", view)
+	}
+}
+
+func TestTruncatePathPreservesDirectoryTail(t *testing.T) {
+	path := "/Users/evanhopkins/code/terminal-paste-bin"
+	got := truncatePath(path, 24)
+	if !strings.HasPrefix(got, "...") || !strings.HasSuffix(got, "/terminal-paste-bin") {
+		t.Errorf("truncatePath = %q, want an ellipsized path ending in the directory name", got)
+	}
+	if width := runewidth.StringWidth(got); width > 24 {
+		t.Errorf("truncatePath width = %d, exceeds 24", width)
+	}
+}
+
 func TestModelHighlightsOnlyTheSelectedRow(t *testing.T) {
 	model := New("default", map[int]string{3: "value"})
 	selected, _ := model.handleKey("3")

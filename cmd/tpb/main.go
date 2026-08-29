@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/evanjhopkins/terminal-paste-bin/internal/clipboard"
 	"github.com/evanjhopkins/terminal-paste-bin/internal/store"
@@ -14,6 +15,7 @@ const helpText = `Terminal Paste Bin
 
 Usage:
   tpb [bin-name]
+  tpb .
   tpb list
   tpb reset
 
@@ -39,15 +41,15 @@ func main() {
 	}
 	if err == nil && launch != nil {
 		systemClipboard := clipboard.New()
-		err = tui.Run(launch.name, launch.slots, tui.Actions{
+		err = tui.Run(launch.name, launch.directory, launch.slots, tui.Actions{
 			DeleteSlot: func(slot int) error {
-				return deleteBinSlot(paths, launch.name, slot)
+				return deleteBinSlot(paths, launch.id, slot)
 			},
 			WriteSlot: func(slot int) error {
-				return writeClipboardToSlot(paths, launch.name, slot, systemClipboard)
+				return writeClipboardToSlot(paths, launch.id, slot, systemClipboard)
 			},
 			CopySlot: func(slot int) (bool, error) {
-				return copySlotToClipboard(paths, launch.name, slot, systemClipboard)
+				return copySlotToClipboard(paths, launch.id, slot, systemClipboard)
 			},
 		})
 	}
@@ -58,11 +60,17 @@ func main() {
 }
 
 type binLaunch struct {
-	name  string
-	slots map[int]string
+	id        string
+	name      string
+	directory string
+	slots     map[int]string
 }
 
 func run(args []string, paths store.Paths, output io.Writer) (*binLaunch, error) {
+	return runInDirectory(args, paths, output, "")
+}
+
+func runInDirectory(args []string, paths store.Paths, output io.Writer, directory string) (*binLaunch, error) {
 	if isInformationalInvocation(args) {
 		switch args[0] {
 		case "-h", "--help":
@@ -78,7 +86,7 @@ func run(args []string, paths store.Paths, output io.Writer) (*binLaunch, error)
 	}
 
 	if len(args) == 0 {
-		return loadBin("default", paths)
+		return loadNamedBin("default", paths)
 	}
 	if len(args) != 1 {
 		return nil, fmt.Errorf("usage: tpb [bin-name | list | reset]")
@@ -91,7 +99,13 @@ func run(args []string, paths store.Paths, output io.Writer) (*binLaunch, error)
 			return nil, err
 		}
 		for _, name := range bins.ListBins() {
-			if _, err := fmt.Fprintln(output, name); err != nil {
+			if name.IsDirectory() {
+				if _, err := fmt.Fprintln(output, "(dir) "+name.Directory); err != nil {
+					return nil, fmt.Errorf("write bin list: %w", err)
+				}
+				continue
+			}
+			if _, err := fmt.Fprintln(output, name.Name); err != nil {
 				return nil, fmt.Errorf("write bin list: %w", err)
 			}
 		}
@@ -104,7 +118,23 @@ func run(args []string, paths store.Paths, output io.Writer) (*binLaunch, error)
 			return nil, fmt.Errorf("write reset result: %w", err)
 		}
 	default:
-		return loadBin(args[0], paths)
+		if args[0] == "." {
+			if directory == "" {
+				var err error
+				directory, err = currentDirectory()
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				var err error
+				directory, err = canonicalDirectory(directory)
+				if err != nil {
+					return nil, err
+				}
+			}
+			return loadDirectoryBin(directory, paths)
+		}
+		return loadNamedBin(args[0], paths)
 	}
 	return nil, nil
 }
@@ -121,7 +151,34 @@ func isInformationalInvocation(args []string) bool {
 	}
 }
 
-func loadBin(name string, paths store.Paths) (*binLaunch, error) {
+func currentDirectory() (string, error) {
+	directory, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("get current directory: %w", err)
+	}
+	return canonicalDirectory(directory)
+}
+
+func canonicalDirectory(directory string) (string, error) {
+	absPath, err := filepath.Abs(directory)
+	if err != nil {
+		return "", fmt.Errorf("resolve current directory: %w", err)
+	}
+	resolvedPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve current directory symlinks: %w", err)
+	}
+	info, err := os.Stat(resolvedPath)
+	if err != nil {
+		return "", fmt.Errorf("stat current directory: %w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("current path is not a directory: %s", resolvedPath)
+	}
+	return resolvedPath, nil
+}
+
+func loadNamedBin(name string, paths store.Paths) (*binLaunch, error) {
 	if err := store.ValidateBinName(name); err != nil {
 		return nil, err
 	}
@@ -133,10 +190,26 @@ func loadBin(name string, paths store.Paths) (*binLaunch, error) {
 	if err := bins.EnsureBin(name); err != nil {
 		return nil, err
 	}
+	return loadBin(store.BinInfo{ID: name, Name: name}, bins)
+}
 
+func loadDirectoryBin(directory string, paths store.Paths) (*binLaunch, error) {
+	bins, err := store.Open(paths)
+	if err != nil {
+		return nil, err
+	}
+	info, err := bins.EnsureDirectoryBin(directory)
+	if err != nil {
+		return nil, err
+	}
+	info.Name = "current directory"
+	return loadBin(info, bins)
+}
+
+func loadBin(info store.BinInfo, bins *store.Store) (*binLaunch, error) {
 	slots := make(map[int]string, 10)
 	for slot := 0; slot <= 9; slot++ {
-		value, exists, err := bins.ReadSlot(name, slot)
+		value, exists, err := bins.ReadSlot(info.ID, slot)
 		if err != nil {
 			return nil, err
 		}
@@ -144,7 +217,7 @@ func loadBin(name string, paths store.Paths) (*binLaunch, error) {
 			slots[slot] = value
 		}
 	}
-	return &binLaunch{name: name, slots: slots}, nil
+	return &binLaunch{id: info.ID, name: info.Name, directory: info.Directory, slots: slots}, nil
 }
 
 func deleteBinSlot(paths store.Paths, binName string, slot int) error {

@@ -2,16 +2,21 @@
 package store
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"unicode"
 	"unicode/utf8"
 )
 
 const maxBinNameLength = 64
+
+const directoryBinPrefix = "@directory:"
 
 var (
 	ErrBinNotFound    = errors.New("bin not found")
@@ -20,7 +25,20 @@ var (
 )
 
 type bin struct {
-	Slots map[int]string
+	Directory string `json:",omitempty"`
+	Slots     map[int]string
+}
+
+// BinInfo identifies a persisted bin and the text used to present it.
+type BinInfo struct {
+	ID        string
+	Name      string
+	Directory string
+}
+
+// IsDirectory reports whether the bin belongs to a directory.
+func (b BinInfo) IsDirectory() bool {
+	return b.Directory != ""
 }
 
 // Store holds the bins loaded from a single environment's storage files.
@@ -83,14 +101,50 @@ func (s *Store) EnsureBin(name string) error {
 	})
 }
 
-// ListBins returns bin names in alphabetical order.
-func (s *Store) ListBins() []string {
-	names := make([]string, 0, len(s.bins))
-	for name := range s.bins {
-		names = append(names, name)
+// EnsureDirectoryBin creates or returns the bin for an absolute directory path.
+func (s *Store) EnsureDirectoryBin(directory string) (BinInfo, error) {
+	if err := validateDirectory(directory); err != nil {
+		return BinInfo{}, err
 	}
-	sort.Strings(names)
-	return names
+
+	info := BinInfo{ID: directoryBinID(directory), Directory: directory}
+	if err := s.update(func(bins map[string]bin) error {
+		existing, exists := bins[info.ID]
+		if !exists {
+			bins[info.ID] = bin{Directory: directory, Slots: make(map[int]string)}
+			return nil
+		}
+		if existing.Directory != directory {
+			return fmt.Errorf("directory bin identifier collision")
+		}
+		return nil
+	}); err != nil {
+		return BinInfo{}, err
+	}
+	return info, nil
+}
+
+// ListBins returns named bins followed by directory bins, alphabetically within
+// each group.
+func (s *Store) ListBins() []BinInfo {
+	bins := make([]BinInfo, 0, len(s.bins))
+	for id, stored := range s.bins {
+		info := BinInfo{ID: id, Name: id, Directory: stored.Directory}
+		if info.IsDirectory() {
+			info.Name = ""
+		}
+		bins = append(bins, info)
+	}
+	sort.Slice(bins, func(left, right int) bool {
+		if bins[left].IsDirectory() != bins[right].IsDirectory() {
+			return !bins[left].IsDirectory()
+		}
+		if bins[left].IsDirectory() {
+			return bins[left].Directory < bins[right].Directory
+		}
+		return bins[left].Name < bins[right].Name
+	})
+	return bins
 }
 
 // ReadSlot returns a slot's value and whether the slot has a stored value.
@@ -157,6 +211,23 @@ func ValidateBinName(name string) error {
 	return nil
 }
 
+func directoryBinID(directory string) string {
+	digest := sha256.Sum256([]byte(directory))
+	return directoryBinPrefix + base64.RawURLEncoding.EncodeToString(digest[:])
+}
+
+func validateDirectory(directory string) error {
+	if !filepath.IsAbs(directory) || !utf8.ValidString(directory) {
+		return fmt.Errorf("invalid directory path %q", directory)
+	}
+	for _, character := range directory {
+		if unicode.IsControl(character) {
+			return fmt.Errorf("invalid directory path %q", directory)
+		}
+	}
+	return nil
+}
+
 func ensureConfigFile(path string) error {
 	contents, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -200,8 +271,17 @@ func loadBins(path string) (map[string]bin, error) {
 		return nil, fmt.Errorf("parse bins file: %w", err)
 	}
 	for name, bin := range bins {
-		if err := ValidateBinName(name); err != nil {
-			return nil, fmt.Errorf("parse bins file: %w", err)
+		if bin.Directory == "" {
+			if err := ValidateBinName(name); err != nil {
+				return nil, fmt.Errorf("parse bins file: %w", err)
+			}
+		} else {
+			if err := validateDirectory(bin.Directory); err != nil {
+				return nil, fmt.Errorf("parse bins file: %w", err)
+			}
+			if name != directoryBinID(bin.Directory) {
+				return nil, fmt.Errorf("parse bins file: directory bin identifier does not match path")
+			}
 		}
 		if bin.Slots == nil {
 			bin.Slots = make(map[int]string)

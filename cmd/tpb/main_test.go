@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -150,8 +151,51 @@ func TestRunLoadsDefaultAndNamedBins(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if got, want := bins.ListBins(), []string{"default", "myapp"}; !reflect.DeepEqual(got, want) {
+	if got, want := bins.ListBins(), []store.BinInfo{{ID: "default", Name: "default"}, {ID: "myapp", Name: "myapp"}}; !reflect.DeepEqual(got, want) {
 		t.Errorf("ListBins() = %v, want %v", got, want)
+	}
+}
+
+func TestRunOpensCanonicalDirectoryBin(t *testing.T) {
+	paths, err := store.PathsFor(t.TempDir(), "tpb")
+	if err != nil {
+		t.Fatalf("PathsFor: %v", err)
+	}
+	directory := filepath.Join(t.TempDir(), "project")
+	if err := os.Mkdir(directory, 0o700); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	link := filepath.Join(t.TempDir(), "project-link")
+	if err := os.Symlink(directory, link); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+	canonicalPath, err := canonicalDirectory(directory)
+	if err != nil {
+		t.Fatalf("canonicalDirectory: %v", err)
+	}
+
+	launch, err := runInDirectory([]string{"."}, paths, &bytes.Buffer{}, link)
+	if err != nil {
+		t.Fatalf("run directory bin: %v", err)
+	}
+	if launch.name != "current directory" || launch.directory != canonicalPath || launch.id == "" {
+		t.Errorf("directory launch = %+v", launch)
+	}
+
+	var output bytes.Buffer
+	if _, err := run([]string{"list"}, paths, &output); err != nil {
+		t.Fatalf("run list: %v", err)
+	}
+	if got, want := output.String(), "(dir) "+canonicalPath+"\n"; got != want {
+		t.Errorf("list output = %q, want %q", got, want)
+	}
+
+	again, err := runInDirectory([]string{"."}, paths, &bytes.Buffer{}, directory)
+	if err != nil {
+		t.Fatalf("reopen directory bin: %v", err)
+	}
+	if again.id != launch.id {
+		t.Errorf("directory bin IDs = %q and %q, want one canonical bin", launch.id, again.id)
 	}
 }
 

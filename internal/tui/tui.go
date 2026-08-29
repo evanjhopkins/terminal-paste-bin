@@ -23,6 +23,7 @@ const (
 // Model is the interactive state for a single TPB bin.
 type Model struct {
 	binName      string
+	directory    string
 	slots        map[int]string
 	selectedSlot int
 	expanded     bool
@@ -40,11 +41,16 @@ type Actions struct {
 
 // New creates a compact slot-selection view for binName.
 func New(binName string, slots map[int]string) Model {
-	return NewWithActions(binName, slots, Actions{})
+	return NewWithDetails(binName, "", slots, Actions{})
 }
 
 // NewWithActions creates a compact slot-selection view with application actions.
 func NewWithActions(binName string, slots map[int]string, actions Actions) Model {
+	return NewWithDetails(binName, "", slots, actions)
+}
+
+// NewWithDetails creates a compact slot-selection view with bin context and actions.
+func NewWithDetails(binName, directory string, slots map[int]string, actions Actions) Model {
 	values := make(map[int]string, 10)
 	for slot, value := range slots {
 		if slot >= 0 && slot <= 9 {
@@ -54,6 +60,7 @@ func NewWithActions(binName string, slots map[int]string, actions Actions) Model
 
 	return Model{
 		binName:      binName,
+		directory:    directory,
 		slots:        values,
 		selectedSlot: -1,
 		actions:      actions,
@@ -62,8 +69,8 @@ func NewWithActions(binName string, slots map[int]string, actions Actions) Model
 }
 
 // Run starts the interactive TUI for a bin.
-func Run(binName string, slots map[int]string, actions Actions) error {
-	_, err := tea.NewProgram(NewWithActions(binName, slots, actions)).Run()
+func Run(binName, directory string, slots map[int]string, actions Actions) error {
+	_, err := tea.NewProgram(NewWithDetails(binName, directory, slots, actions)).Run()
 	return err
 }
 
@@ -201,7 +208,7 @@ func (m Model) render() string {
 	}
 
 	var output strings.Builder
-	fmt.Fprintf(&output, "Terminal Paste Bin - %s\n\n", m.binName)
+	fmt.Fprintf(&output, "%s\n\n", m.renderBinHeader())
 
 	for _, slot := range slotOrder {
 		marker := " "
@@ -232,7 +239,41 @@ func (m Model) renderExpanded() string {
 		value = "<blank>"
 	}
 
-	return fmt.Sprintf("Slot %d\n\n%s\n\n1-0 select   ←/v collapse   r read   w write   d delete   q quit\n", m.selectedSlot, value)
+	return fmt.Sprintf("%s\n\nSlot %d\n\n%s\n\n1-0 select   ←/v collapse   r read   w write   d delete   q quit\n", m.renderBinHeader(), m.selectedSlot, value)
+}
+
+func (m Model) renderBinHeader() string {
+	header := fmt.Sprintf("Terminal Paste Bin - %s", m.binName)
+	if m.directory == "" {
+		return header
+	}
+	return header + "\n" + truncatePath(m.directory, m.width)
+}
+
+func truncatePath(path string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+	if runewidth.StringWidth(path) <= maxWidth {
+		return path
+	}
+	if maxWidth <= 3 {
+		return runewidth.Truncate(path, maxWidth, "")
+	}
+
+	tailWidth := maxWidth - 3
+	runes := []rune(path)
+	start := len(runes)
+	width := 0
+	for start > 0 {
+		runeWidth := runewidth.RuneWidth(runes[start-1])
+		if width+runeWidth > tailWidth {
+			break
+		}
+		start--
+		width += runeWidth
+	}
+	return "..." + string(runes[start:])
 }
 
 func preview(value string, maxWidth int) string {

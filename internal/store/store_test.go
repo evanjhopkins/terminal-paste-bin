@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
@@ -34,7 +35,7 @@ func TestStorePersistsBinsAndSlots(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
-	if got, want := reopened.ListBins(), []string{"default", "myapp"}; !reflect.DeepEqual(got, want) {
+	if got, want := reopened.ListBins(), []BinInfo{{ID: "default", Name: "default"}, {ID: "myapp", Name: "myapp"}}; !reflect.DeepEqual(got, want) {
 		t.Errorf("ListBins() = %v, want %v", got, want)
 	}
 	if got, exists, err := reopened.ReadSlot("myapp", 3); err != nil || !exists || got != "hello\nworld" {
@@ -45,6 +46,43 @@ func TestStorePersistsBinsAndSlots(t *testing.T) {
 	}
 	if _, exists, err := reopened.ReadSlot("myapp", 3); err != nil || exists {
 		t.Errorf("deleted slot = (exists %t, err %v), want (false, nil)", exists, err)
+	}
+}
+
+func TestStorePersistsDirectoryBins(t *testing.T) {
+	paths, err := PathsFor(t.TempDir(), "tpb")
+	if err != nil {
+		t.Fatalf("PathsFor: %v", err)
+	}
+	directory := filepath.Join(t.TempDir(), "project")
+	if err := os.Mkdir(directory, 0o700); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+
+	first, err := Open(paths)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	info, err := first.EnsureDirectoryBin(directory)
+	if err != nil {
+		t.Fatalf("EnsureDirectoryBin: %v", err)
+	}
+	if !info.IsDirectory() || info.Directory != directory || info.ID == directory {
+		t.Errorf("directory bin info = %+v", info)
+	}
+	if err := first.WriteSlot(info.ID, 2, "project value"); err != nil {
+		t.Fatalf("WriteSlot: %v", err)
+	}
+
+	reopened, err := Open(paths)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	if got, want := reopened.ListBins(), []BinInfo{info}; !reflect.DeepEqual(got, want) {
+		t.Errorf("ListBins() = %v, want %v", got, want)
+	}
+	if got, exists, err := reopened.ReadSlot(info.ID, 2); err != nil || !exists || got != "project value" {
+		t.Errorf("ReadSlot() = (%q, %t, %v), want (project value, true, nil)", got, exists, err)
 	}
 }
 
@@ -154,6 +192,9 @@ func TestStoreValidatesBinNamesAndSlots(t *testing.T) {
 		if err := store.EnsureBin(name); !errors.Is(err, ErrInvalidBinName) {
 			t.Errorf("EnsureBin(%q) error = %v, want ErrInvalidBinName", name, err)
 		}
+	}
+	if _, err := store.EnsureDirectoryBin("relative/path"); err == nil {
+		t.Error("EnsureDirectoryBin accepted a relative path")
 	}
 	if err := store.EnsureBin("valid"); err != nil {
 		t.Fatalf("EnsureBin valid: %v", err)
