@@ -58,6 +58,24 @@ tpb list
 
 Directory bins follow you: `tpb` opened in a directory always resolves to that directory's own bin, so the same path always shares the same slots regardless of how you reach it.
 
+## Managing Bins
+
+Named bins can be renamed or deleted, and directory bins whose directory has since been removed can be pruned:
+
+```sh
+tpb rename myapp myapp-v2   # keeps every slot, fails if myapp-v2 already exists
+tpb delete myapp-v2         # asks for confirmation, then removes the bin and its slots
+tpb delete --yes myapp-v2   # skips the prompt (also -y); required when stdin is not a terminal
+tpb prune --dry-run         # list directory bins whose directory no longer exists
+tpb prune                   # remove them
+```
+
+Deletion is permanent. When attached to a terminal, `tpb delete` states the bin name and how many non-blank slots it holds before asking `[y/N]`; declining exits non-zero without changing anything. When stdin or stdout is not a terminal and `--yes` is not given, `tpb delete` refuses rather than hanging or deleting silently.
+
+Directory bins are keyed by their canonical path and cannot be renamed or deleted by name; `tpb prune` is the only way to remove them, and it never touches named bins. Prune exits zero even when there is nothing to remove.
+
+The words `list`, `delete`, `rename`, `prune`, `reset`, and `doctor` are reserved and cannot be used as bin names. A bin created before its name became reserved still loads and can be rescued with `tpb rename`.
+
 ## Keybindings
 
 | Key | Action |
@@ -110,7 +128,7 @@ tpb reset
 
 ### Diagnosing Problems
 
-`tpb doctor` runs diagnostic checks and exits non-zero if any fail. Currently it verifies clipboard access:
+`tpb doctor` runs diagnostic checks and exits non-zero if any fail. It verifies clipboard access and counts directory bins whose directory no longer exists:
 
 ```sh
 tpb doctor
@@ -118,9 +136,12 @@ tpb doctor
 
 ```text
 Clipboard access: FAIL
+Stale directory bins: WARN (2 stale; run 'tpb prune --dry-run' to review)
+
+1 check(s) failed
 ```
 
-Passing checks print in green and failing checks in red when the output is a terminal.
+Passing checks print in green, warnings in yellow, and failing checks in red when the output is a terminal. Stale directory bins are a warning rather than a failure: doctor still exits zero and recommends reviewing with `tpb prune --dry-run` before pruning. Doctor only reports; it never prunes or otherwise modifies bins.
 
 ## Development
 

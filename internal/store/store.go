@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"syscall"
 	"unicode"
 	"unicode/utf8"
 )
@@ -20,9 +21,22 @@ const directoryBinPrefix = "@directory:"
 
 var (
 	ErrBinNotFound    = errors.New("bin not found")
+	ErrBinExists      = errors.New("bin already exists")
+	ErrDirectoryBin   = errors.New("directory bins are keyed by path and cannot be modified by name")
 	ErrInvalidBinName = errors.New("invalid bin name")
 	ErrInvalidSlot    = errors.New("invalid slot")
 )
+
+// reservedBinNames are command words that cannot be used as bin names.
+var reservedBinNames = map[string]bool{
+	"list":    true,
+	"reset":   true,
+	"doctor":  true,
+	"default": true,
+	"delete":  true,
+	"rename":  true,
+	"prune":   true,
+}
 
 type bin struct {
 	Directory string `json:",omitempty"`
@@ -198,9 +212,120 @@ func (s *Store) DeleteSlot(binName string, slot int) error {
 	})
 }
 
-// ValidateBinName applies the initial conservative bin-name policy.
+// Lookup returns the bin stored under an identifier and whether it exists.
+func (s *Store) Lookup(binName string) (BinInfo, bool) {
+	stored, exists := s.bins[binName]
+	if !exists {
+		return BinInfo{}, false
+	}
+	info := BinInfo{ID: binName, Name: binName, Directory: stored.Directory}
+	if info.IsDirectory() {
+		info.Name = ""
+	}
+	return info, true
+}
+
+// DeleteBin permanently removes a named bin and all of its slots.
+func (s *Store) DeleteBin(binName string) error {
+	return s.update(func(bins map[string]bin) error {
+		stored, exists := bins[binName]
+		if !exists {
+			return fmt.Errorf("%w: %s", ErrBinNotFound, binName)
+		}
+		if stored.Directory != "" {
+			return fmt.Errorf("%w: %s", ErrDirectoryBin, binName)
+		}
+		delete(bins, binName)
+		return nil
+	})
+}
+
+// RenameBin moves a named bin to a new name, preserving its slots. The new
+// name must be valid and unused.
+func (s *Store) RenameBin(oldName, newName string) error {
+	if err := ValidateBinName(newName); err != nil {
+		return err
+	}
+	return s.update(func(bins map[string]bin) error {
+		stored, exists := bins[oldName]
+		if !exists {
+			return fmt.Errorf("%w: %s", ErrBinNotFound, oldName)
+		}
+		if stored.Directory != "" {
+			return fmt.Errorf("%w: %s", ErrDirectoryBin, oldName)
+		}
+		if _, taken := bins[newName]; taken {
+			return fmt.Errorf("%w: %s", ErrBinExists, newName)
+		}
+		delete(bins, oldName)
+		bins[newName] = stored
+		return nil
+	})
+}
+
+// StaleDirectoryBins returns the directory bins whose directory no longer
+// exists, sorted by directory.
+func (s *Store) StaleDirectoryBins() []BinInfo {
+	return staleDirectoryBins(s.bins)
+}
+
+// PruneDirectoryBins removes directory bins whose directory no longer exists
+// and returns the bins it removed, sorted by directory.
+func (s *Store) PruneDirectoryBins() ([]BinInfo, error) {
+	var pruned []BinInfo
+	err := s.update(func(bins map[string]bin) error {
+		pruned = staleDirectoryBins(bins)
+		for _, info := range pruned {
+			delete(bins, info.ID)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return pruned, nil
+}
+
+func staleDirectoryBins(bins map[string]bin) []BinInfo {
+	stale := make([]BinInfo, 0)
+	for id, stored := range bins {
+		if stored.Directory == "" || !directoryMissing(stored.Directory) {
+			continue
+		}
+		stale = append(stale, BinInfo{ID: id, Directory: stored.Directory})
+	}
+	sort.Slice(stale, func(left, right int) bool {
+		return stale[left].Directory < stale[right].Directory
+	})
+	return stale
+}
+
+// directoryMissing reports whether a stored directory path definitely no
+// longer refers to a directory. Errors other than "does not exist" (such as
+// permission problems) are treated as present so that bins are never pruned
+// on uncertain evidence.
+func directoryMissing(directory string) bool {
+	info, err := os.Stat(directory)
+	if err == nil {
+		return !info.IsDir()
+	}
+	return errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR)
+}
+
+// ValidateBinName applies the initial conservative bin-name policy: names must
+// be well-formed and must not collide with a tpb command word.
 func ValidateBinName(name string) error {
-	if name == "" || name == "list" || name == "reset" || name == "doctor" || name == "default" || len(name) > maxBinNameLength || !utf8.ValidString(name) {
+	if reservedBinNames[name] {
+		return fmt.Errorf("%w: %q is reserved", ErrInvalidBinName, name)
+	}
+	return validateBinNameSyntax(name)
+}
+
+// validateBinNameSyntax checks the structural rules for a bin name without
+// rejecting reserved words. Persisted bins are checked with this so that a bin
+// created before its name became reserved still loads and can be renamed.
+func validateBinNameSyntax(name string) error {
+	if name == "" || len(name) > maxBinNameLength || !utf8.ValidString(name) {
 		return fmt.Errorf("%w: %q", ErrInvalidBinName, name)
 	}
 	for _, character := range name {
@@ -278,7 +403,7 @@ func loadBins(path string) (map[string]bin, error) {
 			continue
 		}
 		if bin.Directory == "" {
-			if err := ValidateBinName(name); err != nil {
+			if err := validateBinNameSyntax(name); err != nil {
 				return nil, fmt.Errorf("parse bins file: %w", err)
 			}
 		} else {
