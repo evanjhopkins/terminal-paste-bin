@@ -2,12 +2,14 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/evanjhopkins/terminal-paste-bin/internal/clipboard"
 	"github.com/evanjhopkins/terminal-paste-bin/internal/store"
 )
 
@@ -82,6 +84,87 @@ func TestRunInformationalFlagsDoNotCreateStorage(t *testing.T) {
 				t.Errorf("storage directory stat error = %v, want not exist", err)
 			}
 		})
+	}
+}
+
+func TestRunDoctorReportsClipboardStatus(t *testing.T) {
+	tests := []struct {
+		name       string
+		diagnostic clipboard.Diagnostic
+		want       string
+		wantErr    bool
+	}{
+		{
+			name:       "available",
+			diagnostic: clipboard.Diagnostic{Status: clipboard.StatusOK, Backend: "wl-clipboard"},
+			want:       "Clipboard access: OK (wl-clipboard)\n",
+		},
+		{
+			name:       "unavailable",
+			diagnostic: clipboard.Diagnostic{Status: clipboard.StatusUnavailable},
+			want:       "Clipboard access: FAIL\n\n1 check(s) failed\n",
+			wantErr:    true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			_, err := runDoctor(&output, func() clipboard.Diagnostic { return test.diagnostic })
+			if test.wantErr && !errors.Is(err, errDoctorFailed) {
+				t.Fatalf("runDoctor error = %v, want errDoctorFailed", err)
+			}
+			if !test.wantErr && err != nil {
+				t.Fatalf("runDoctor error = %v, want nil", err)
+			}
+			if got := output.String(); got != test.want {
+				t.Errorf("runDoctor output = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestColorize(t *testing.T) {
+	tests := []struct {
+		name   string
+		status clipboard.Status
+		want   string
+	}{
+		{name: "ok", status: clipboard.StatusOK, want: "\x1b[32mClipboard access: OK\x1b[0m"},
+		{name: "unavailable", status: clipboard.StatusUnavailable, want: "\x1b[31mClipboard access: FAIL\x1b[0m"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := colorize("Clipboard access: "+statusLabel(test.status), test.status); got != test.want {
+				t.Errorf("colorize = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestTerminalOutputIsFalseForPipes(t *testing.T) {
+	if terminalOutput(&bytes.Buffer{}) {
+		t.Error("terminalOutput reported a buffer as a terminal")
+	}
+}
+
+func statusLabel(status clipboard.Status) string {
+	if status == clipboard.StatusUnavailable {
+		return "FAIL"
+	}
+	return "OK"
+}
+
+func TestRunDoctorDoesNotCreateStorage(t *testing.T) {
+	paths, err := store.PathsFor(t.TempDir(), "tpb")
+	if err != nil {
+		t.Fatalf("PathsFor: %v", err)
+	}
+
+	run([]string{"doctor"}, paths, &bytes.Buffer{})
+	if _, err := os.Stat(paths.Directory); !os.IsNotExist(err) {
+		t.Errorf("storage directory stat error = %v, want not exist", err)
 	}
 }
 

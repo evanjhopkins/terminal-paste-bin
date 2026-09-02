@@ -20,6 +20,7 @@ Usage:
   tpb .
   tpb list
   tpb reset
+  tpb doctor
 
 Options:
   -h, --help      Show help
@@ -29,11 +30,17 @@ Options:
 // version is set at build time for release builds.
 var version = "devel"
 
+const (
+	ansiRed   = "\x1b[31m"
+	ansiGreen = "\x1b[32m"
+	ansiReset = "\x1b[0m"
+)
+
 func main() {
 	var launch *binLaunch
 	var paths store.Paths
 	var err error
-	if isInformationalInvocation(os.Args[1:]) {
+	if isStandaloneInvocation(os.Args[1:]) {
 		launch, err = run(os.Args[1:], paths, os.Stdout)
 	} else {
 		paths, err = store.DefaultPaths(os.Args[0])
@@ -64,7 +71,9 @@ func main() {
 		if errors.As(err, &exitError) {
 			os.Exit(exitError.ExitCode())
 		}
-		fmt.Fprintln(os.Stderr, "tpb:", err)
+		if !errors.Is(err, errDoctorFailed) {
+			fmt.Fprintln(os.Stderr, "tpb:", err)
+		}
 		os.Exit(1)
 	}
 }
@@ -95,7 +104,7 @@ func run(args []string, paths store.Paths, output io.Writer) (*binLaunch, error)
 }
 
 func runInDirectory(args []string, paths store.Paths, output io.Writer, directory string) (*binLaunch, error) {
-	if isInformationalInvocation(args) {
+	if isStandaloneInvocation(args) {
 		switch args[0] {
 		case "-h", "--help":
 			if _, err := fmt.Fprint(output, helpText); err != nil {
@@ -105,6 +114,8 @@ func runInDirectory(args []string, paths store.Paths, output io.Writer, director
 			if _, err := fmt.Fprintf(output, "tpb %s\n", version); err != nil {
 				return nil, fmt.Errorf("write version: %w", err)
 			}
+		case "doctor":
+			return runDoctor(output, clipboard.Diagnose)
 		}
 		return nil, nil
 	}
@@ -163,16 +174,81 @@ func runInDirectory(args []string, paths store.Paths, output io.Writer, director
 	return nil, nil
 }
 
-func isInformationalInvocation(args []string) bool {
+func isStandaloneInvocation(args []string) bool {
 	if len(args) != 1 {
 		return false
 	}
 	switch args[0] {
-	case "-h", "--help", "-v", "--version":
+	case "-h", "--help", "-v", "--version", "doctor":
 		return true
 	default:
 		return false
 	}
+}
+
+// errDoctorFailed signals that doctor checks failed. The report, including
+// the failure summary, has already been printed.
+var errDoctorFailed = errors.New("doctor checks failed")
+
+// runDoctor prints the result of TPB's diagnostic checks.
+func runDoctor(output io.Writer, diagnose func() clipboard.Diagnostic) (*binLaunch, error) {
+	diagnostic := diagnose()
+	status := "OK"
+	failures := 0
+	if diagnostic.Status == clipboard.StatusUnavailable {
+		status = "FAIL"
+		failures++
+	}
+	line := "Clipboard access: " + status
+	if diagnostic.Backend != "" {
+		line += " (" + diagnostic.Backend + ")"
+	}
+	if terminalOutput(output) {
+		line = colorize(line, diagnostic.Status)
+	}
+	if _, err := fmt.Fprintln(output, line); err != nil {
+		return nil, fmt.Errorf("write doctor output: %w", err)
+	}
+	if failures > 0 {
+		if _, err := fmt.Fprintln(output); err != nil {
+			return nil, fmt.Errorf("write doctor output: %w", err)
+		}
+		summary := fmt.Sprintf("%d check(s) failed", failures)
+		if terminalOutput(output) {
+			summary = colorize(summary, diagnostic.Status)
+		}
+		if _, err := fmt.Fprintln(output, summary); err != nil {
+			return nil, fmt.Errorf("write doctor output: %w", err)
+		}
+		return nil, errDoctorFailed
+	}
+	return nil, nil
+}
+
+// colorize wraps text in the ANSI color matching the diagnostic status.
+func colorize(text string, status clipboard.Status) string {
+	color := ansiGreen
+	if status == clipboard.StatusUnavailable {
+		color = ansiRed
+	}
+	return color + text + ansiReset
+}
+
+// terminalOutput reports whether the writer is an interactive terminal and
+// colors should be emitted.
+func terminalOutput(w io.Writer) bool {
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	file, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
 }
 
 func currentDirectory() (string, error) {

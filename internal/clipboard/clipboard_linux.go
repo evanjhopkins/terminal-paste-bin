@@ -21,6 +21,20 @@ func New() Clipboard {
 	return unavailableClipboard{reason: "install wl-clipboard, xclip, or xsel and run TPB in a graphical session"}
 }
 
+// Diagnose reports the availability of a Linux desktop clipboard backend.
+func Diagnose() Diagnostic {
+	if os.Getenv("WAYLAND_DISPLAY") != "" && commandAvailable("wl-paste") && commandAvailable("wl-copy") {
+		return Diagnostic{Status: StatusOK, Backend: "wl-clipboard"}
+	}
+	if commandAvailable("xclip") {
+		return Diagnostic{Status: StatusOK, Backend: "xclip"}
+	}
+	if commandAvailable("xsel") {
+		return Diagnostic{Status: StatusOK, Backend: "xsel"}
+	}
+	return Diagnostic{Status: StatusUnavailable}
+}
+
 func commandAvailable(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil

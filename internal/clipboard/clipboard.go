@@ -24,6 +24,22 @@ type Clipboard interface {
 	Writer
 }
 
+// Status reports whether a capability is available.
+type Status int
+
+const (
+	// StatusOK indicates the capability is available.
+	StatusOK Status = iota
+	// StatusUnavailable indicates the capability is not available.
+	StatusUnavailable
+)
+
+// Diagnostic describes the availability of a TPB capability.
+type Diagnostic struct {
+	Status  Status
+	Backend string // name of the working backend, empty when unavailable
+}
+
 type commandClipboard struct {
 	readName  string
 	readArgs  []string

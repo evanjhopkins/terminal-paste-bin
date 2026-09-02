@@ -111,6 +111,20 @@ Reset removes `bins.json` and `config.json` for the active environment without a
 tpb reset
 ```
 
+### Diagnosing Problems
+
+`tpb doctor` runs diagnostic checks and exits non-zero if any fail. Currently it verifies clipboard access:
+
+```sh
+tpb doctor
+```
+
+```text
+Clipboard access: FAIL
+```
+
+Passing checks print in green and failing checks in red when the output is a terminal.
+
 ## Development
 
 ```sh

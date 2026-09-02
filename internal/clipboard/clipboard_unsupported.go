@@ -6,3 +6,8 @@ package clipboard
 func New() Clipboard {
 	return unavailableClipboard{reason: "TPB clipboard support is currently available on macOS and Linux"}
 }
+
+// Diagnose reports that clipboard access is unavailable on this platform.
+func Diagnose() Diagnostic {
+	return Diagnostic{Status: StatusUnavailable}
+}
