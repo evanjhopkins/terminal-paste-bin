@@ -183,10 +183,10 @@ func TestRunResetClearsOnlyRequestedEnvironment(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Open: %v", err)
 		}
-		if err := bins.EnsureBin("default"); err != nil {
+		if err := bins.EnsureBin("myapp"); err != nil {
 			t.Fatalf("EnsureBin: %v", err)
 		}
-		if err := bins.WriteSlot("default", 1, paths.Directory); err != nil {
+		if err := bins.WriteSlot("myapp", 1, paths.Directory); err != nil {
 			t.Fatalf("WriteSlot: %v", err)
 		}
 	}
@@ -208,33 +208,59 @@ func TestRunResetClearsOnlyRequestedEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen production store: %v", err)
 	}
-	value, exists, err := production.ReadSlot("default", 1)
+	value, exists, err := production.ReadSlot("myapp", 1)
 	if err != nil || !exists || value != productionPaths.Directory {
 		t.Errorf("production slot = (%q, %t, %v), want (%q, true, nil)", value, exists, err, productionPaths.Directory)
 	}
 }
 
-func TestRunLoadsDefaultAndNamedBins(t *testing.T) {
+func TestRunOpensDirectoryBinWithoutAnArgument(t *testing.T) {
 	paths, err := store.PathsFor(t.TempDir(), "tpb")
 	if err != nil {
 		t.Fatalf("PathsFor: %v", err)
 	}
+	directory := filepath.Join(t.TempDir(), "project")
+	if err := os.Mkdir(directory, 0o700); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	canonicalPath, err := canonicalDirectory(directory)
+	if err != nil {
+		t.Fatalf("canonicalDirectory: %v", err)
+	}
 
-	for _, args := range [][]string{nil, {"myapp"}} {
-		launch, err := run(args, paths, &bytes.Buffer{})
-		if err != nil {
-			t.Fatalf("run(%v): %v", args, err)
-		}
-		if launch == nil {
-			t.Fatalf("run(%v) did not prepare a bin", args)
-		}
+	launch, err := runInDirectory(nil, paths, &bytes.Buffer{}, directory)
+	if err != nil {
+		t.Fatalf("run directory bin: %v", err)
+	}
+	if launch.directory != canonicalPath || launch.id == "" {
+		t.Errorf("directory launch without argument = %+v", launch)
 	}
 
 	bins, err := store.Open(paths)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if got, want := bins.ListBins(), []store.BinInfo{{ID: "default", Name: "default"}, {ID: "myapp", Name: "myapp"}}; !reflect.DeepEqual(got, want) {
+	for _, info := range bins.ListBins() {
+		if !info.IsDirectory() || info.Directory != canonicalPath {
+			t.Errorf("expected only the %s directory bin, saw %+v", canonicalPath, info)
+		}
+	}
+}
+
+func TestRunLoadsNamedBins(t *testing.T) {
+	paths, err := store.PathsFor(t.TempDir(), "tpb")
+	if err != nil {
+		t.Fatalf("PathsFor: %v", err)
+	}
+	if _, err := run([]string{"myapp"}, paths, &bytes.Buffer{}); err != nil {
+		t.Fatalf("run myapp: %v", err)
+	}
+
+	bins, err := store.Open(paths)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if got, want := bins.ListBins(), []store.BinInfo{{ID: "myapp", Name: "myapp"}}; !reflect.DeepEqual(got, want) {
 		t.Errorf("ListBins() = %v, want %v", got, want)
 	}
 }
@@ -257,7 +283,7 @@ func TestRunOpensCanonicalDirectoryBin(t *testing.T) {
 		t.Fatalf("canonicalDirectory: %v", err)
 	}
 
-	launch, err := runInDirectory([]string{"."}, paths, &bytes.Buffer{}, link)
+	launch, err := runInDirectory(nil, paths, &bytes.Buffer{}, link)
 	if err != nil {
 		t.Fatalf("run directory bin: %v", err)
 	}
@@ -273,7 +299,7 @@ func TestRunOpensCanonicalDirectoryBin(t *testing.T) {
 		t.Errorf("list output = %q, want %q", got, want)
 	}
 
-	again, err := runInDirectory([]string{"."}, paths, &bytes.Buffer{}, directory)
+	again, err := runInDirectory(nil, paths, &bytes.Buffer{}, directory)
 	if err != nil {
 		t.Fatalf("reopen directory bin: %v", err)
 	}
@@ -312,21 +338,21 @@ func TestDeleteBinSlotPersistsDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if err := bins.EnsureBin("default"); err != nil {
+	if err := bins.EnsureBin("myapp"); err != nil {
 		t.Fatalf("EnsureBin: %v", err)
 	}
-	if err := bins.WriteSlot("default", 3, "value"); err != nil {
+	if err := bins.WriteSlot("myapp", 3, "value"); err != nil {
 		t.Fatalf("WriteSlot: %v", err)
 	}
 
-	if err := deleteBinSlot(paths, "default", 3); err != nil {
+	if err := deleteBinSlot(paths, "myapp", 3); err != nil {
 		t.Fatalf("deleteBinSlot: %v", err)
 	}
 	reopened, err := store.Open(paths)
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
-	if _, exists, err := reopened.ReadSlot("default", 3); err != nil || exists {
+	if _, exists, err := reopened.ReadSlot("myapp", 3); err != nil || exists {
 		t.Errorf("deleted slot = (exists %t, err %v), want (false, nil)", exists, err)
 	}
 }
@@ -340,19 +366,19 @@ func TestWriteClipboardToSlotPreservesContents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if err := bins.EnsureBin("default"); err != nil {
+	if err := bins.EnsureBin("myapp"); err != nil {
 		t.Fatalf("EnsureBin: %v", err)
 	}
 
 	want := "hello\n\u4e16\u754c\n"
-	if err := writeClipboardToSlot(paths, "default", 3, fakeClipboard{value: want}); err != nil {
+	if err := writeClipboardToSlot(paths, "myapp", 3, fakeClipboard{value: want}); err != nil {
 		t.Fatalf("writeClipboardToSlot: %v", err)
 	}
 	reopened, err := store.Open(paths)
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
-	got, exists, err := reopened.ReadSlot("default", 3)
+	got, exists, err := reopened.ReadSlot("myapp", 3)
 	if err != nil || !exists || got != want {
 		t.Errorf("stored slot = (%q, %t, %v), want (%q, true, nil)", got, exists, err, want)
 	}
@@ -367,16 +393,16 @@ func TestCopySlotToClipboardPreservesContents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if err := bins.EnsureBin("default"); err != nil {
+	if err := bins.EnsureBin("myapp"); err != nil {
 		t.Fatalf("EnsureBin: %v", err)
 	}
 	want := "hello\n\u4e16\u754c\n"
-	if err := bins.WriteSlot("default", 3, want); err != nil {
+	if err := bins.WriteSlot("myapp", 3, want); err != nil {
 		t.Fatalf("WriteSlot: %v", err)
 	}
 
 	writer := &recordingWriter{}
-	copied, err := copySlotToClipboard(paths, "default", 3, writer)
+	copied, err := copySlotToClipboard(paths, "myapp", 3, writer)
 	if err != nil || !copied {
 		t.Fatalf("copySlotToClipboard = (%t, %v), want (true, nil)", copied, err)
 	}
@@ -394,12 +420,12 @@ func TestCopySlotToClipboardLeavesBlankSlotUntouched(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if err := bins.EnsureBin("default"); err != nil {
+	if err := bins.EnsureBin("myapp"); err != nil {
 		t.Fatalf("EnsureBin: %v", err)
 	}
 
 	writer := &recordingWriter{}
-	copied, err := copySlotToClipboard(paths, "default", 3, writer)
+	copied, err := copySlotToClipboard(paths, "myapp", 3, writer)
 	if err != nil || copied {
 		t.Fatalf("copySlotToClipboard = (%t, %v), want (false, nil)", copied, err)
 	}

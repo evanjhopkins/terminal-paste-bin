@@ -17,7 +17,6 @@ const helpText = `Terminal Paste Bin
 
 Usage:
   tpb [bin-name]
-  tpb .
   tpb list
   tpb reset
   tpb doctor
@@ -121,7 +120,7 @@ func runInDirectory(args []string, paths store.Paths, output io.Writer, director
 	}
 
 	if len(args) == 0 {
-		return loadNamedBin("default", paths)
+		return loadDirectoryBinAt(directory, paths)
 	}
 	if len(args) != 1 {
 		return nil, fmt.Errorf("usage: tpb [bin-name | list | reset]")
@@ -153,25 +152,28 @@ func runInDirectory(args []string, paths store.Paths, output io.Writer, director
 			return nil, fmt.Errorf("write reset result: %w", err)
 		}
 	default:
-		if args[0] == "." {
-			if directory == "" {
-				var err error
-				directory, err = currentDirectory()
-				if err != nil {
-					return nil, err
-				}
-			} else {
-				var err error
-				directory, err = canonicalDirectory(directory)
-				if err != nil {
-					return nil, err
-				}
-			}
-			return loadDirectoryBin(directory, paths)
-		}
 		return loadNamedBin(args[0], paths)
 	}
 	return nil, nil
+}
+
+// loadDirectoryBinAt resolves the supplied directory (falling back to the
+// current working directory) and opens the bin scoped to it.
+func loadDirectoryBinAt(directory string, paths store.Paths) (*binLaunch, error) {
+	if directory == "" {
+		var err error
+		directory, err = currentDirectory()
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		var err error
+		directory, err = canonicalDirectory(directory)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return loadDirectoryBin(directory, paths)
 }
 
 func isStandaloneInvocation(args []string) bool {

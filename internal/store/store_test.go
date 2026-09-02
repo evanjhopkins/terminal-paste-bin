@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -21,11 +22,11 @@ func TestStorePersistsBinsAndSlots(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if err := store.EnsureBin("default"); err != nil {
-		t.Fatalf("EnsureBin default: %v", err)
-	}
 	if err := store.EnsureBin("myapp"); err != nil {
 		t.Fatalf("EnsureBin myapp: %v", err)
+	}
+	if err := store.EnsureBin("myproxy"); err != nil {
+		t.Fatalf("EnsureBin myproxy: %v", err)
 	}
 	if err := store.WriteSlot("myapp", 3, "hello\nworld"); err != nil {
 		t.Fatalf("WriteSlot: %v", err)
@@ -35,7 +36,7 @@ func TestStorePersistsBinsAndSlots(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
-	if got, want := reopened.ListBins(), []BinInfo{{ID: "default", Name: "default"}, {ID: "myapp", Name: "myapp"}}; !reflect.DeepEqual(got, want) {
+	if got, want := reopened.ListBins(), []BinInfo{{ID: "myapp", Name: "myapp"}, {ID: "myproxy", Name: "myproxy"}}; !reflect.DeepEqual(got, want) {
 		t.Errorf("ListBins() = %v, want %v", got, want)
 	}
 	if got, exists, err := reopened.ReadSlot("myapp", 3); err != nil || !exists || got != "hello\nworld" {
@@ -188,7 +189,7 @@ func TestStoreValidatesBinNamesAndSlots(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 
-	for _, name := range []string{"", "list", "reset", "doctor", "bad\nname", strings.Repeat("a", maxBinNameLength+1)} {
+	for _, name := range []string{"", "list", "reset", "doctor", "default", "bad\nname", strings.Repeat("a", maxBinNameLength+1)} {
 		if err := store.EnsureBin(name); !errors.Is(err, ErrInvalidBinName) {
 			t.Errorf("EnsureBin(%q) error = %v, want ErrInvalidBinName", name, err)
 		}
@@ -207,6 +208,62 @@ func TestStoreValidatesBinNamesAndSlots(t *testing.T) {
 	}
 }
 
+func TestOpenPurgesLegacyReservedBins(t *testing.T) {
+	paths, err := PathsFor(t.TempDir(), "tpb")
+	if err != nil {
+		t.Fatalf("PathsFor: %v", err)
+	}
+	if _, err := Open(paths); err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	legacy := map[string]bin{
+		"default": {Slots: map[int]string{1: "legacy"}},
+		"doctor":  {Slots: map[int]string{2: "doctor"}},
+		"myapp":   {Slots: make(map[int]string)},
+	}
+
+	contents, err := json.MarshalIndent(legacy, "", "  ")
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if err := os.WriteFile(paths.BinsFile, contents, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	reopened, err := Open(paths)
+	if err != nil {
+		t.Fatalf("Open after legacy data: %v", err)
+	}
+	names := make([]string, 0, len(reopened.bins))
+	for name := range reopened.bins {
+		names = append(names, name)
+	}
+	for _, name := range names {
+		if name == "default" || name == "doctor" {
+			t.Errorf("legacy reserved bin %q survived Open", name)
+		}
+	}
+
+	var cleaned map[string]bin
+	persisted, err := os.ReadFile(paths.BinsFile)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if err := json.Unmarshal(persisted, &cleaned); err != nil {
+		t.Fatalf("Unmarshal persisted: %v", err)
+	}
+	if _, exists := cleaned["default"]; exists {
+		t.Error("legacy default bin still present on disk after Open")
+	}
+	if _, exists := cleaned["doctor"]; exists {
+		t.Error("legacy doctor bin still present on disk after Open")
+	}
+	if _, exists := cleaned["myapp"]; !exists {
+		t.Error("unrelated named bin was dropped during purge")
+	}
+}
+
 func TestMutationsWaitForExistingLock(t *testing.T) {
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		t.Skip("advisory file locking is currently supported only on macOS and Linux")
@@ -220,7 +277,7 @@ func TestMutationsWaitForExistingLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open first store: %v", err)
 	}
-	if err := first.EnsureBin("default"); err != nil {
+	if err := first.EnsureBin("myapp"); err != nil {
 		t.Fatalf("EnsureBin: %v", err)
 	}
 	second, err := Open(paths)
@@ -234,7 +291,7 @@ func TestMutationsWaitForExistingLock(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		done <- second.WriteSlot("default", 1, "saved")
+		done <- second.WriteSlot("myapp", 1, "saved")
 	}()
 
 	select {
@@ -252,7 +309,7 @@ func TestMutationsWaitForExistingLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen store: %v", err)
 	}
-	if value, exists, err := reopened.ReadSlot("default", 1); err != nil || !exists || value != "saved" {
+	if value, exists, err := reopened.ReadSlot("myapp", 1); err != nil || !exists || value != "saved" {
 		t.Errorf("persisted slot = (%q, %t, %v), want (saved, true, nil)", value, exists, err)
 	}
 }
@@ -266,7 +323,7 @@ func TestMutationsReloadCurrentBinsBeforeSaving(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open first store: %v", err)
 	}
-	if err := first.EnsureBin("default"); err != nil {
+	if err := first.EnsureBin("myapp"); err != nil {
 		t.Fatalf("EnsureBin: %v", err)
 	}
 	second, err := Open(paths)
@@ -274,10 +331,10 @@ func TestMutationsReloadCurrentBinsBeforeSaving(t *testing.T) {
 		t.Fatalf("Open second store: %v", err)
 	}
 
-	if err := first.WriteSlot("default", 1, "first"); err != nil {
+	if err := first.WriteSlot("myapp", 1, "first"); err != nil {
 		t.Fatalf("first WriteSlot: %v", err)
 	}
-	if err := second.WriteSlot("default", 2, "second"); err != nil {
+	if err := second.WriteSlot("myapp", 2, "second"); err != nil {
 		t.Fatalf("second WriteSlot: %v", err)
 	}
 
@@ -292,7 +349,7 @@ func TestMutationsReloadCurrentBinsBeforeSaving(t *testing.T) {
 		{slot: 1, value: "first"},
 		{slot: 2, value: "second"},
 	} {
-		value, exists, err := reopened.ReadSlot("default", expected.slot)
+		value, exists, err := reopened.ReadSlot("myapp", expected.slot)
 		if err != nil || !exists || value != expected.value {
 			t.Errorf("slot %d = (%q, %t, %v), want (%q, true, nil)", expected.slot, value, exists, err, expected.value)
 		}

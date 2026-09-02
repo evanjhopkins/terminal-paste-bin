@@ -48,18 +48,15 @@ go build -o bin/tpb ./cmd/tpb
 ./bin/tpb
 ```
 
-Open the default bin with `tpb`, or create and open a named bin:
+Open a bin scoped to the current directory with `tpb`, or create and open a named bin:
 
 ```sh
+tpb
 tpb myapp
 tpb list
 ```
 
-Open a bin scoped to the current directory:
-
-```sh
-tpb .
-```
+Directory bins follow you: `tpb` opened in a directory always resolves to that directory's own bin, so the same path always shares the same slots regardless of how you reach it.
 
 ## Keybindings
 

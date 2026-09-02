@@ -200,7 +200,7 @@ func (s *Store) DeleteSlot(binName string, slot int) error {
 
 // ValidateBinName applies the initial conservative bin-name policy.
 func ValidateBinName(name string) error {
-	if name == "" || name == "list" || name == "reset" || name == "doctor" || len(name) > maxBinNameLength || !utf8.ValidString(name) {
+	if name == "" || name == "list" || name == "reset" || name == "doctor" || name == "default" || len(name) > maxBinNameLength || !utf8.ValidString(name) {
 		return fmt.Errorf("%w: %q", ErrInvalidBinName, name)
 	}
 	for _, character := range name {
@@ -270,7 +270,13 @@ func loadBins(path string) (map[string]bin, error) {
 		}
 		return nil, fmt.Errorf("parse bins file: %w", err)
 	}
+	removedReserved := false
 	for name, bin := range bins {
+		if name == "default" || name == "doctor" {
+			delete(bins, name)
+			removedReserved = true
+			continue
+		}
 		if bin.Directory == "" {
 			if err := ValidateBinName(name); err != nil {
 				return nil, fmt.Errorf("parse bins file: %w", err)
@@ -291,6 +297,11 @@ func loadBins(path string) (map[string]bin, error) {
 			if err := validateSlot(slot); err != nil {
 				return nil, fmt.Errorf("parse bins file: %w", err)
 			}
+		}
+	}
+	if removedReserved {
+		if err := saveBins(path, bins); err != nil {
+			return nil, err
 		}
 	}
 	return bins, nil
