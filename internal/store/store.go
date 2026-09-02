@@ -36,6 +36,7 @@ var reservedBinNames = map[string]bool{
 	"delete":  true,
 	"rename":  true,
 	"prune":   true,
+	"search":  true,
 }
 
 type bin struct {

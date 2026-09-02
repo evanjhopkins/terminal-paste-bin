@@ -25,6 +25,7 @@ Usage:
   tpb prune [--dry-run]
   tpb reset
   tpb doctor
+  tpb search <query>
 
 Commands:
   list      List named and directory bins
@@ -33,13 +34,14 @@ Commands:
   prune     Remove directory bins whose directory no longer exists (--dry-run to preview)
   reset     Remove all stored data without confirmation
   doctor    Check clipboard access and report stale directory bins
+  search    Search every bin's slots for text (case-insensitive substring)
 
 Options:
   -h, --help      Show help
   -v, --version   Show version
 `
 
-const usageText = "usage: tpb [bin-name | list | delete | rename | prune | reset | doctor]"
+const usageText = "usage: tpb [bin-name | list | delete | rename | prune | reset | doctor | search]"
 
 // version is set at build time for release builds.
 var version = "devel"
@@ -85,6 +87,9 @@ func main() {
 		var exitError *exec.ExitError
 		if errors.As(err, &exitError) {
 			os.Exit(exitError.ExitCode())
+		}
+		if errors.Is(err, errSearchNoMatch) {
+			os.Exit(searchNoMatchExitCode)
 		}
 		if !errors.Is(err, errDoctorFailed) {
 			fmt.Fprintln(os.Stderr, "tpb:", err)
@@ -190,6 +195,8 @@ func runSession(args []string, s session) (*binLaunch, error) {
 		return nil, runRename(args[1:], s)
 	case "prune":
 		return nil, runPrune(args[1:], s)
+	case "search":
+		return nil, runSearch(args[1:], s)
 	default:
 		if len(args) != 1 {
 			return nil, errors.New(usageText)
@@ -339,6 +346,65 @@ func runPrune(args []string, s session) error {
 		if _, err := fmt.Fprintf(s.output, "%s (dir) %s\n", verb, info.Directory); err != nil {
 			return fmt.Errorf("write prune result: %w", err)
 		}
+	}
+	return nil
+}
+
+// searchNoMatchExitCode is the process exit code for a search that completed
+// successfully but found no matches. It is distinct from the generic error
+// exit code so scripts can distinguish "nothing matched" from "failed".
+const searchNoMatchExitCode = 2
+
+// errSearchNoMatch signals a completed search with no matches. The command
+// prints nothing (or, in interactive use, a short note) and exits with
+// searchNoMatchExitCode.
+var errSearchNoMatch = errors.New("search: no matches")
+
+// searchPreviewWidth bounds the preview column of a search result line so
+// matches stay on one line without depending on terminal width.
+const searchPreviewWidth = 80
+
+// runSearch implements `tpb search <query>`.
+func runSearch(args []string, s session) error {
+	if len(args) != 1 {
+		return errors.New("usage: tpb search <query>")
+	}
+	query := strings.TrimSpace(args[0])
+	if query == "" {
+		return errors.New("usage: tpb search <query>")
+	}
+	needle := strings.ToLower(query)
+
+	bins, err := store.Open(s.paths)
+	if err != nil {
+		return err
+	}
+
+	found := false
+	for _, info := range bins.ListBins() {
+		label := info.Name
+		if info.IsDirectory() {
+			label = "(dir) " + info.Directory
+		}
+		for slot := 0; slot <= 9; slot++ {
+			value, exists, err := bins.ReadSlot(info.ID, slot)
+			if err != nil {
+				return err
+			}
+			if !exists || value == "" {
+				continue
+			}
+			if !strings.Contains(strings.ToLower(value), needle) {
+				continue
+			}
+			found = true
+			if _, err := fmt.Fprintf(s.output, "%s\t%d\t%s\n", label, slot, tui.Preview(value, searchPreviewWidth)); err != nil {
+				return fmt.Errorf("write search result: %w", err)
+			}
+		}
+	}
+	if !found {
+		return errSearchNoMatch
 	}
 	return nil
 }

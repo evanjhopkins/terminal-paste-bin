@@ -74,7 +74,25 @@ Deletion is permanent. When attached to a terminal, `tpb delete` states the bin 
 
 Directory bins are keyed by their canonical path and cannot be renamed or deleted by name; `tpb prune` is the only way to remove them, and it never touches named bins. Prune exits zero even when there is nothing to remove.
 
-The words `list`, `delete`, `rename`, `prune`, `reset`, and `doctor` are reserved and cannot be used as bin names. A bin created before its name became reserved still loads and can be rescued with `tpb rename`.
+The words `list`, `delete`, `rename`, `prune`, `reset`, `doctor`, and `search` are reserved and cannot be used as bin names. A bin created before its name became reserved still loads and can be rescued with `tpb rename`.
+
+## Searching
+
+Search every bin's slots without opening the TUI:
+
+```sh
+tpb search postgres
+```
+
+Matching is a case-insensitive substring against slot contents across all named and directory bins. Each match prints one tab-separated line — `bin`, `slot`, and a single-line preview — so `grep` and `awk` can operate on the output:
+
+```text
+myapp	1	postgres://localhost:5432/myapp
+production	4	POSTGRES_PASSWORD=...
+(dir) /Users/you/code/app	7	hello ↵ world
+```
+
+Long and multiline values are matched in full but previewed on one line; the preview is truncated to stay on a single line. A search that finds nothing prints no output and exits with code `2`, distinct from the generic error exit code `1`, so scripts can branch on "no match". An empty or missing query is a usage error.
 
 ## Keybindings
 

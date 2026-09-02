@@ -931,3 +931,84 @@ func TestRunDeleteDoesNotSeeStaleBinsFromAnotherProcess(t *testing.T) {
 		t.Errorf("bins after stale write = %v, want none", got)
 	}
 }
+
+func TestRunSearchFindsMatchesAcrossBins(t *testing.T) {
+	paths := newStoreWithBin(t, "zeta", map[int]string{1: "HELLO there", 3: "hello\nworld"})
+	directory := t.TempDir()
+	bins, err := store.Open(paths)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	info, err := bins.EnsureDirectoryBin(directory)
+	if err != nil {
+		t.Fatalf("EnsureDirectoryBin: %v", err)
+	}
+	if err := bins.WriteSlot(info.ID, 2, "say hello"); err != nil {
+		t.Fatalf("WriteSlot: %v", err)
+	}
+
+	var output bytes.Buffer
+	if _, err := run([]string{"search", "hello"}, paths, &output); err != nil {
+		t.Fatalf("run search: %v", err)
+	}
+	want := "zeta\t1\tHELLO there\n" +
+		"zeta\t3\thello ↵ world\n" +
+		"(dir) " + directory + "\t2\tsay hello\n"
+	if got := output.String(); got != want {
+		t.Errorf("search output = %q, want %q", got, want)
+	}
+}
+
+func TestRunSearchSkipsBlankSlots(t *testing.T) {
+	paths := newStoreWithBin(t, "blank", map[int]string{0: "", 5: ""})
+
+	var output bytes.Buffer
+	_, err := run([]string{"search", "anything"}, paths, &output)
+	if !errors.Is(err, errSearchNoMatch) {
+		t.Fatalf("search error = %v, want errSearchNoMatch", err)
+	}
+	if output.Len() != 0 {
+		t.Errorf("search wrote %q, want no output", output.String())
+	}
+}
+
+func TestRunSearchReportsNoMatches(t *testing.T) {
+	paths := newStoreWithBin(t, "myapp", map[int]string{1: "one", 2: "two"})
+
+	var output bytes.Buffer
+	_, err := run([]string{"search", "missing"}, paths, &output)
+	if !errors.Is(err, errSearchNoMatch) {
+		t.Fatalf("search error = %v, want errSearchNoMatch", err)
+	}
+	if output.Len() != 0 {
+		t.Errorf("search wrote %q, want no output", output.String())
+	}
+}
+
+func TestRunSearchRejectsEmptyQuery(t *testing.T) {
+	paths := newStoreWithBin(t, "myapp", nil)
+
+	for _, args := range [][]string{
+		{"search"},
+		{"search", ""},
+		{"search", "   "},
+		{"search", "one", "two"},
+	} {
+		_, err := run(args, paths, &bytes.Buffer{})
+		if err == nil || !strings.Contains(err.Error(), "usage: tpb search <query>") {
+			t.Errorf("run(%v) error = %v, want search usage error", args, err)
+		}
+	}
+}
+
+func TestRunSearchMatchesUnicodeAndWhitespace(t *testing.T) {
+	paths := newStoreWithBin(t, "unicode", map[int]string{3: "café ☕"})
+
+	var output bytes.Buffer
+	if _, err := run([]string{"search", "  CAFÉ  "}, paths, &output); err != nil {
+		t.Fatalf("run search: %v", err)
+	}
+	if got, want := output.String(), "unicode\t3\tcafé ☕\n"; got != want {
+		t.Errorf("search output = %q, want %q", got, want)
+	}
+}

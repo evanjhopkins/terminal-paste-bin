@@ -190,7 +190,7 @@ func TestStoreValidatesBinNamesAndSlots(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 
-	for _, name := range []string{"", "list", "reset", "doctor", "default", "delete", "rename", "prune", "bad\nname", strings.Repeat("a", maxBinNameLength+1)} {
+	for _, name := range []string{"", "list", "reset", "doctor", "default", "delete", "rename", "prune", "search", "bad\nname", strings.Repeat("a", maxBinNameLength+1)} {
 		if err := store.EnsureBin(name); !errors.Is(err, ErrInvalidBinName) {
 			t.Errorf("EnsureBin(%q) error = %v, want ErrInvalidBinName", name, err)
 		}

@@ -306,6 +306,13 @@ func truncatePath(path string, maxWidth int) string {
 	return "..." + string(runes[start:])
 }
 
+// Preview renders a slot value as a single-line excerpt for non-interactive
+// output, applying the same newline replacement and truncation as the TUI
+// compact list.
+func Preview(value string, maxWidth int) string {
+	return preview(value, maxWidth)
+}
+
 func preview(value string, maxWidth int) string {
 	if value == "" {
 		value = "<blank>"
