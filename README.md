@@ -1,16 +1,12 @@
-<div align="center">
-
 # tpb
 
-**A tiny, persistent clipboard register for your terminal.**
+`tpb` is a terminal UI for keeping small pieces of text in persistent clipboard
+registers. Each bin has ten slots mapped to the number keys. A slot can hold a
+URL, command, identifier, JSON document, or other multiline text, and can be
+copied to or replaced from the system clipboard.
 
-![Go](https://img.shields.io/badge/Go-1.26.6-00ADD8?logo=go&logoColor=white)
-![Platforms](https://img.shields.io/badge/platform-macOS%20%2B%20Linux-222222)
-![License](https://img.shields.io/badge/license-MIT-2ea44f)
-
-Store the text you reach for all day: URLs, commands, IDs, JSON, and multiline snippets. `tpb` gives each named bin ten fast keyboard-addressable slots, with no daemon, account, or cloud sync.
-
-</div>
+Bins are stored locally as JSON. There is no daemon, account, network service,
+or synchronization layer.
 
 ```text
 Terminal Paste Bin - myapp
@@ -29,64 +25,125 @@ Terminal Paste Bin - myapp
 ↑/↓ move   1-0 select   →/v view   r read   w write   x execute   d delete   q quit
 ```
 
-## Why TPB?
+## Features
 
-- **Ten slots, zero hunting.** Slots map directly to `1` through `9`, then `0`.
-- **Named bins.** Keep `myapp`, `production`, and `scratch` separate.
-- **Built for the keyboard.** Select, view, copy, write, or delete without pressing Enter.
-- **Local by default.** Data lives in small local JSON files with no network activity.
+- Ten keyboard-addressable slots per bin, including multiline values
+- Named bins for reusable groups of values
+- Directory bins tied to the canonical path of the current working directory
+- System clipboard integration on macOS, Wayland, and X11
+- Case-insensitive search across all bins
+- Bin rename, deletion, stale-bin cleanup, and diagnostics
+- Atomic writes and file locking for local JSON storage
+- Direct execution of a stored shell command
 
-## Quick Start
+## Requirements
 
-Requirements: Go `1.26.6`, macOS, or Linux.
+- macOS or Linux
+- Go 1.26.6 or newer when installing from source
+- For clipboard reads and writes on Linux, one supported clipboard tool:
+  - Wayland: `wl-copy` and `wl-paste` from
+    [`wl-clipboard`](https://github.com/bugaevc/wl-clipboard)
+  - X11: `xclip` or `xsel`
+
+macOS uses the built-in `pbcopy` and `pbpaste` commands. On Linux, `tpb`
+prefers `wl-clipboard` when `WAYLAND_DISPLAY` is set, then `xclip`, then
+`xsel`.
+
+## Installation
+
+Install the command directly with Go:
 
 ```sh
-git clone git@github.com:evanjhopkins/terminal-paste-bin.git
+go install github.com/evanjhopkins/terminal-paste-bin/cmd/tpb@latest
+```
+
+The Go binary directory must be on `PATH`. This is `GOBIN` when set, otherwise
+`$(go env GOPATH)/bin`.
+
+To build a checkout instead:
+
+```sh
+git clone https://github.com/evanjhopkins/terminal-paste-bin.git
 cd terminal-paste-bin
 go build -o bin/tpb ./cmd/tpb
 ./bin/tpb --help
-./bin/tpb
 ```
 
-Open a bin scoped to the current directory with `tpb`, or create and open a named bin:
+The executable must be named `tpb` (or `tpbd` for an isolated development
+installation), because the name selects its storage directory.
+
+## Quick Start
+
+Open the bin associated with the current directory:
 
 ```sh
 tpb
+```
+
+To store the current system clipboard in slot 1, press `1`, then `w`. The TUI
+exits after writing. Run `tpb` again, press `1`, then `r` to copy that slot back
+to the system clipboard.
+
+Use an argument to create or open a named bin instead:
+
+```sh
 tpb myapp
+```
+
+Directory bins use canonical paths, so opening `tpb` through a symlink to the
+same directory reaches the same bin. Named bins run independently of the
+current directory.
+
+## TUI Controls
+
+| Key | Action |
+| --- | --- |
+| `1`-`9`, `0` | Select a slot |
+| `↑`, `↓` | Move between slots |
+| `→`, `v` | Expand the selected slot |
+| `←`, `v` | Return to the compact view |
+| `r` | Copy the selected slot to the system clipboard and exit |
+| `w` | Replace the selected slot with the system clipboard and exit |
+| `x` | Execute the selected slot through the shell and exit |
+| `d` | Clear the selected slot |
+| `q`, `Esc` | Quit |
+
+Reading or executing a blank slot leaves the TUI open. Reading it does not
+change the clipboard.
+
+`x` does not ask for confirmation. It runs the slot as `$SHELL -c <value>`, or
+with `/bin/sh` when `SHELL` is unset. Commands in directory bins run from the
+stored directory; commands in named bins run from the directory where `tpb`
+was started.
+
+## CLI Reference
+
+```text
+tpb [bin-name]
 tpb list
+tpb delete [--yes] <bin>
+tpb rename <old> <new>
+tpb prune [--dry-run]
+tpb reset
+tpb doctor
+tpb search <query>
+tpb --help
+tpb --version
 ```
 
-Directory bins follow you: `tpb` opened in a directory always resolves to that directory's own bin, so the same path always shares the same slots regardless of how you reach it.
-
-## Managing Bins
-
-Named bins can be renamed or deleted, and stale directory bins and empty bins can be pruned:
+### List and search
 
 ```sh
-tpb rename myapp myapp-v2   # keeps every slot, fails if myapp-v2 already exists
-tpb delete myapp-v2         # asks for confirmation, then removes the bin and its slots
-tpb delete --yes myapp-v2   # skips the prompt (also -y); required when stdin is not a terminal
-tpb prune --dry-run         # preview bins that would be pruned
-tpb prune                   # remove them
-```
-
-A bin is empty when all of its slots are blank (no stored value or an empty string). Prune removes directory bins whose directory no longer exists (whether or not they still hold slots), plus any empty bin — named or directory-scoped — whether or not its directory still exists. A directory bin that is both stale and empty is reported and removed exactly once. A bin that is neither stale nor empty is never pruned.
-
-Deletion is permanent. When attached to a terminal, `tpb delete` states the bin name and how many non-blank slots it holds before asking `[y/N]`; declining exits non-zero without changing anything. When stdin or stdout is not a terminal and `--yes` is not given, `tpb delete` refuses rather than hanging or deleting silently.
-
-Directory bins are keyed by their canonical path and cannot be renamed or deleted by name; `tpb prune` is the only way to remove them. Prune exits zero even when there is nothing to remove. Pruned bins print as `Pruned <name>` for named bins and `Pruned (dir) <path>` for directory bins (`Would prune ...` with `--dry-run`); running prune twice reports nothing the second time.
-
-The words `list`, `delete`, `rename`, `prune`, `reset`, `doctor`, and `search` are reserved and cannot be used as bin names. A bin created before its name became reserved still loads and can be rescued with `tpb rename`.
-
-## Searching
-
-Search every bin's slots without opening the TUI:
-
-```sh
+tpb list
 tpb search postgres
 ```
 
-Matching is a case-insensitive substring against slot contents across all named and directory bins. Each match prints one tab-separated line — `bin`, `slot`, and a single-line preview — so `grep` and `awk` can operate on the output:
+`list` prints named bins first, followed by directory bins in the form
+`(dir) /absolute/path`. Both groups are sorted alphabetically.
+
+`search` performs a case-insensitive substring match against every non-blank
+slot. Results are tab-separated and contain the bin, slot number, and a
+single-line preview:
 
 ```text
 myapp	1	postgres://localhost:5432/myapp
@@ -94,81 +151,69 @@ production	4	POSTGRES_PASSWORD=...
 (dir) /Users/you/code/app	7	hello ↵ world
 ```
 
-Long and multiline values are matched in full but previewed on one line; the preview is truncated to stay on a single line. A search that finds nothing prints no output and exits with code `2`, distinct from the generic error exit code `1`, so scripts can branch on "no match". An empty or missing query is a usage error.
+A search with no matches prints nothing and exits with status 2. Errors reported
+by `tpb` exit with status 1; a command launched with `x` propagates that
+command's exit status.
 
-## Keybindings
-
-| Key | Action |
-| --- | --- |
-| `1`-`9`, `0` | Select a slot |
-| `↑` / `↓` | Move through slots |
-| `→` / `v` | View the selected slot in full |
-| `←` / `v` | Return to the compact list |
-| `r` | Copy the selected slot to the system clipboard and exit |
-| `w` | Save the current system clipboard into the selected slot and exit |
-| `x` | Execute the selected slot through your shell and exit |
-| `d` | Delete the selected slot |
-| `q` / `Esc` | Quit |
-
-Reading a blank slot leaves your existing clipboard untouched.
-
-Executing a blank slot leaves TPB open. Commands run without a confirmation prompt: directory bins run in their stored directory, while named bins run in the directory where you launched `tpb`.
-
-## Clipboard Support
-
-macOS uses the built-in `pbcopy` and `pbpaste` commands.
-
-Linux uses the first available option:
-
-- Wayland: `wl-copy` and `wl-paste` from `wl-clipboard`
-- X11: `xclip`
-- X11 fallback: `xsel`
-
-TPB shows an actionable error if it cannot find a supported clipboard command or graphical session.
-
-## Storage
-
-TPB stores `bins.json` and `config.json` in your operating system's user configuration directory. Files are written atomically.
-
-```text
-macOS
-  ~/Library/Application Support/tpb/
-
-Linux
-  $XDG_CONFIG_HOME/tpb/      (or ~/.config/tpb/)
-```
-
-### Resetting Data
-
-Reset removes `bins.json` and `config.json` for the active environment without a confirmation prompt:
+### Manage bins
 
 ```sh
-tpb reset
+tpb rename myapp myapp-v2
+tpb delete myapp-v2
+tpb delete --yes myapp-v2
+tpb prune --dry-run
+tpb prune
 ```
 
-### Diagnosing Problems
+`delete` applies only to named bins. It prompts on a terminal; `--yes` or `-y`
+is required to skip the prompt and is also required when input or output is not
+a terminal.
 
-`tpb doctor` runs diagnostic checks and exits non-zero if any fail. It verifies clipboard access, counts directory bins whose directory no longer exists, and counts bins whose slots are all blank:
+`prune` removes:
+
+- directory bins whose stored directory no longer exists
+- named or directory bins whose ten slots are all blank
+
+Use `--dry-run` (or `-n`) to inspect the result first. Directory bins cannot be
+renamed or deleted individually.
+
+Bin names may contain up to 64 bytes of valid UTF-8 but cannot contain control
+characters. Command names are reserved: `list`, `delete`, `rename`, `prune`,
+`reset`, `doctor`, and `search`; `default` is also reserved.
+
+### Diagnose and reset
 
 ```sh
 tpb doctor
+tpb reset
 ```
+
+`doctor` reports the selected clipboard backend, stale directory bins, and
+empty bins. Clipboard failure makes the command exit with status 1. Stale and
+empty bins are warnings and do not change the exit status or modify storage.
+Set `NO_COLOR` to any non-empty value to disable color in terminal output.
+
+`reset` deletes all bins and persisted configuration for the active executable
+without confirmation. A `tpbd` development installation has separate data and
+is not affected by `tpb reset`.
+
+## Storage and Configuration
+
+`tpb` uses the operating system's user configuration directory:
 
 ```text
-Clipboard access: FAIL
-Stale directory bins: WARN (2 stale; run 'tpb prune --dry-run' to review)
-  ↳ (dir) /gone/project-a
-  ↳ (dir) /gone/project-b
-Empty bins: WARN (2 empty; run 'tpb prune --dry-run' to review)
-  ↳ scratch
-  ↳ (dir) /Users/you/code/app
-
-1 check(s) failed
+macOS: ~/Library/Application Support/tpb/
+Linux: $XDG_CONFIG_HOME/tpb/ or ~/.config/tpb/
 ```
 
-Warning checks list each affected bin on its own `↳` line below the summary, using the bare name for named bins and `(dir) <path>` for directory bins.
+The directory contains `bins.json`, `config.json`, and `bins.lock`. Storage
+files are created on first use. The directory is mode `0700`; newly written
+data and lock files are mode `0600`.
 
-Passing checks print in green, warnings in yellow, and failing checks in red when the output is a terminal. Stale directory bins and empty bins are warnings rather than failures: doctor still exits zero and recommends reviewing with `tpb prune --dry-run` before pruning. Doctor only reports; it never prunes or otherwise modifies bins.
+There are currently no user-facing options in `config.json`. It must remain a
+valid JSON object, but its contents are not otherwise consumed. `SHELL` selects
+the shell used to execute a slot, `NO_COLOR` disables diagnostic colors, and
+the standard `XDG_CONFIG_HOME` variable changes the Linux storage root.
 
 ## Development
 
@@ -179,18 +224,24 @@ go test ./...
 go build ./cmd/tpb
 ```
 
-Contributors can install the current checkout as `tpbd` for local development without sharing storage with a real `tpb` install:
+Install the current checkout as `tpbd` to test it without touching normal
+`tpb` data:
 
 ```sh
 ./scripts/install_dev.sh
+tpbd --version
 ```
 
-The script installs to `GOBIN`, or `$(go env GOPATH)/bin` when `GOBIN` is unset. Ensure that directory is on your `PATH`:
+The main packages are organized as follows:
 
-```sh
-# zsh
-echo 'export PATH="$PATH:$HOME/go/bin"' >> ~/.zshrc
-source ~/.zshrc
+```text
+cmd/tpb/             command parsing and application wiring
+internal/clipboard/  platform-specific clipboard backends
+internal/store/      JSON persistence, locking, and bin lifecycle
+internal/tui/        Bubble Tea interface and key handling
+scripts/             development installation helper
 ```
 
-Built with Go and [Bubble Tea](https://github.com/charmbracelet/bubbletea).
+## License
+
+[MIT](LICENSE) © 2026 Evan Hopkins
