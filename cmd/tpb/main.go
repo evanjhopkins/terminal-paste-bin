@@ -31,9 +31,9 @@ Commands:
   list      List named and directory bins
   delete    Permanently remove a named bin and its slots (asks first; --yes/-y skips)
   rename    Rename a named bin, keeping its slots
-  prune     Remove directory bins whose directory no longer exists (--dry-run to preview)
+  prune     Remove stale directory bins and empty bins (--dry-run to preview)
   reset     Remove all stored data without confirmation
-  doctor    Check clipboard access and report stale directory bins
+  doctor    Check clipboard access and report stale and empty bins
   search    Search every bin's slots for text (case-insensitive substring)
 
 Options:
@@ -319,6 +319,15 @@ func runPrune(args []string, s session) error {
 		return fmt.Errorf("unexpected argument %q\nusage: tpb prune [--dry-run]", arg)
 	}
 
+	// Storage that does not exist yet holds nothing to prune. Report that
+	// without creating storage files, so --dry-run changes nothing at all.
+	if _, err := os.Stat(s.paths.BinsFile); errors.Is(err, os.ErrNotExist) {
+		if _, err := fmt.Fprintln(s.output, "Nothing to prune."); err != nil {
+			return fmt.Errorf("write prune result: %w", err)
+		}
+		return nil
+	}
+
 	bins, err := store.Open(s.paths)
 	if err != nil {
 		return err
@@ -327,10 +336,10 @@ func runPrune(args []string, s session) error {
 	var pruned []store.BinInfo
 	verb := "Pruned"
 	if dryRun {
-		pruned = bins.StaleDirectoryBins()
+		pruned = bins.PrunableBins()
 		verb = "Would prune"
 	} else {
-		pruned, err = bins.PruneDirectoryBins()
+		pruned, err = bins.PruneStaleAndEmptyBins()
 		if err != nil {
 			return err
 		}
@@ -343,11 +352,20 @@ func runPrune(args []string, s session) error {
 		return nil
 	}
 	for _, info := range pruned {
-		if _, err := fmt.Fprintf(s.output, "%s (dir) %s\n", verb, info.Directory); err != nil {
+		if _, err := fmt.Fprintf(s.output, "%s %s\n", verb, pruneBinLabel(info)); err != nil {
 			return fmt.Errorf("write prune result: %w", err)
 		}
 	}
 	return nil
+}
+
+// pruneBinLabel renders a pruned bin the way list does: named bins by bare
+// name, directory bins as "(dir) <path>".
+func pruneBinLabel(info store.BinInfo) string {
+	if info.IsDirectory() {
+		return "(dir) " + info.Directory
+	}
+	return info.Name
 }
 
 // searchNoMatchExitCode is the process exit code for a search that completed
@@ -504,6 +522,9 @@ type checkResult struct {
 	name   string
 	status checkStatus
 	detail string
+	// items lists one per-bin detail line printed below the check line
+	// (e.g. the stale or empty bins doctor found).
+	items []string
 }
 
 func (c checkResult) String() string {
@@ -520,6 +541,7 @@ func runDoctor(paths store.Paths, output io.Writer, diagnose func() clipboard.Di
 	checks := []checkResult{
 		clipboardCheck(diagnose()),
 		staleDirectoryBinsCheck(paths),
+		emptyBinsCheck(paths),
 	}
 
 	failures := 0
@@ -527,12 +549,17 @@ func runDoctor(paths store.Paths, output io.Writer, diagnose func() clipboard.Di
 		if check.status == checkFail {
 			failures++
 		}
-		line := check.String()
-		if terminalOutput(output) {
-			line = colorize(line, check.status)
+		lines := []string{check.String()}
+		for _, item := range check.items {
+			lines = append(lines, "  ↳ "+item)
 		}
-		if _, err := fmt.Fprintln(output, line); err != nil {
-			return nil, fmt.Errorf("write doctor output: %w", err)
+		for _, line := range lines {
+			if terminalOutput(output) {
+				line = colorize(line, check.status)
+			}
+			if _, err := fmt.Fprintln(output, line); err != nil {
+				return nil, fmt.Errorf("write doctor output: %w", err)
+			}
 		}
 	}
 	if failures > 0 {
@@ -574,13 +601,43 @@ func staleDirectoryBinsCheck(paths store.Paths) checkResult {
 		check.detail = err.Error()
 		return check
 	}
-	stale := len(bins.StaleDirectoryBins())
-	if stale == 0 {
+	stale := bins.StaleDirectoryBins()
+	if len(stale) == 0 {
 		check.detail = "none"
 		return check
 	}
 	check.status = checkWarn
-	check.detail = fmt.Sprintf("%d stale; run 'tpb prune --dry-run' to review", stale)
+	check.detail = fmt.Sprintf("%d stale; run 'tpb prune --dry-run' to review", len(stale))
+	for _, info := range stale {
+		check.items = append(check.items, "(dir) "+info.Directory)
+	}
+	return check
+}
+
+// emptyBinsCheck counts bins whose slots are all blank. Storage that does
+// not exist yet is left untouched and reported as having no empty bins.
+func emptyBinsCheck(paths store.Paths) checkResult {
+	check := checkResult{name: "Empty bins"}
+	if _, err := os.Stat(paths.BinsFile); errors.Is(err, os.ErrNotExist) {
+		check.detail = "none"
+		return check
+	}
+	bins, err := store.Open(paths)
+	if err != nil {
+		check.status = checkFail
+		check.detail = err.Error()
+		return check
+	}
+	empty := bins.EmptyBins()
+	if len(empty) == 0 {
+		check.detail = "none"
+		return check
+	}
+	check.status = checkWarn
+	check.detail = fmt.Sprintf("%d empty; run 'tpb prune --dry-run' to review", len(empty))
+	for _, info := range empty {
+		check.items = append(check.items, pruneBinLabel(info))
+	}
 	return check
 }
 

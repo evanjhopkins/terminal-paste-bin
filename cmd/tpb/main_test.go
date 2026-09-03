@@ -119,12 +119,12 @@ func TestRunDoctorReportsClipboardStatus(t *testing.T) {
 		{
 			name:       "available",
 			diagnostic: clipboard.Diagnostic{Status: clipboard.StatusOK, Backend: "wl-clipboard"},
-			want:       "Clipboard access: OK (wl-clipboard)\nStale directory bins: OK (none)\n",
+			want:       "Clipboard access: OK (wl-clipboard)\nStale directory bins: OK (none)\nEmpty bins: OK (none)\n",
 		},
 		{
 			name:       "unavailable",
 			diagnostic: clipboard.Diagnostic{Status: clipboard.StatusUnavailable},
-			want:       "Clipboard access: FAIL\nStale directory bins: OK (none)\n\n1 check(s) failed\n",
+			want:       "Clipboard access: FAIL\nStale directory bins: OK (none)\nEmpty bins: OK (none)\n\n1 check(s) failed\n",
 			wantErr:    true,
 		},
 	}
@@ -161,10 +161,16 @@ func TestRunDoctorWarnsAboutStaleDirectoryBins(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	for _, directory := range []string{stale, live} {
-		if _, err := bins.EnsureDirectoryBin(directory); err != nil {
-			t.Fatalf("EnsureDirectoryBin(%q): %v", directory, err)
-		}
+	liveInfo, err := bins.EnsureDirectoryBin(live)
+	if err != nil {
+		t.Fatalf("EnsureDirectoryBin(%q): %v", live, err)
+	}
+	if _, err := bins.EnsureDirectoryBin(stale); err != nil {
+		t.Fatalf("EnsureDirectoryBin(%q): %v", stale, err)
+	}
+	// The live bin holds content so only the stale bin counts as empty.
+	if err := bins.WriteSlot(liveInfo.ID, 1, "keep"); err != nil {
+		t.Fatalf("WriteSlot: %v", err)
 	}
 	if err := os.RemoveAll(stale); err != nil {
 		t.Fatalf("RemoveAll: %v", err)
@@ -177,7 +183,7 @@ func TestRunDoctorWarnsAboutStaleDirectoryBins(t *testing.T) {
 	if _, err := runDoctor(paths, &output, available); err != nil {
 		t.Fatalf("runDoctor error = %v, want nil for warnings", err)
 	}
-	want := "Clipboard access: OK (pbcopy/pbpaste)\nStale directory bins: WARN (1 stale; run 'tpb prune --dry-run' to review)\n"
+	want := "Clipboard access: OK (pbcopy/pbpaste)\nStale directory bins: WARN (1 stale; run 'tpb prune --dry-run' to review)\n  ↳ (dir) " + stale + "\nEmpty bins: WARN (1 empty; run 'tpb prune --dry-run' to review)\n  ↳ (dir) " + stale + "\n"
 	if got := output.String(); got != want {
 		t.Errorf("runDoctor output = %q, want %q", got, want)
 	}
@@ -780,6 +786,18 @@ func TestRunPruneRemovesOnlyStaleDirectoryBins(t *testing.T) {
 			t.Fatalf("create directory bin %q: %v", directory, err)
 		}
 	}
+	// The live directory bin holds content so only the stale bins are pruned.
+	liveBins, err := store.Open(paths)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	for _, info := range liveBins.ListBins() {
+		if info.IsDirectory() && info.Directory == live {
+			if err := liveBins.WriteSlot(info.ID, 1, "keep"); err != nil {
+				t.Fatalf("WriteSlot: %v", err)
+			}
+		}
+	}
 	for _, directory := range []string{staleA, staleB} {
 		if err := os.RemoveAll(directory); err != nil {
 			t.Fatalf("RemoveAll: %v", err)
@@ -819,9 +837,22 @@ func TestRunPruneRemovesOnlyStaleDirectoryBins(t *testing.T) {
 }
 
 func TestRunPruneReportsNothingWhenAllDirectoryBinsAreLive(t *testing.T) {
-	paths := newStoreWithBin(t, "named", nil)
-	if _, err := runInDirectory(nil, paths, &bytes.Buffer{}, t.TempDir()); err != nil {
+	paths := newStoreWithBin(t, "named", map[int]string{1: "keep"})
+	live := t.TempDir()
+	if _, err := runInDirectory(nil, paths, &bytes.Buffer{}, live); err != nil {
 		t.Fatalf("create directory bin: %v", err)
+	}
+	// Both bins hold content, so neither is empty and neither is stale.
+	bins, err := store.Open(paths)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	for _, info := range bins.ListBins() {
+		if info.IsDirectory() && info.Directory == live {
+			if err := bins.WriteSlot(info.ID, 1, "keep"); err != nil {
+				t.Fatalf("WriteSlot: %v", err)
+			}
+		}
 	}
 	before := binNames(t, paths)
 
@@ -840,7 +871,7 @@ func TestRunPruneReportsNothingWhenAllDirectoryBinsAreLive(t *testing.T) {
 }
 
 func TestRunPruneRemovesAllDirectoryBinsWhenAllAreStale(t *testing.T) {
-	paths := newStoreWithBin(t, "named", nil)
+	paths := newStoreWithBin(t, "named", map[int]string{1: "keep"})
 	directory := filepath.Join(t.TempDir(), "gone")
 	if err := os.Mkdir(directory, 0o700); err != nil {
 		t.Fatalf("Mkdir: %v", err)
@@ -861,7 +892,7 @@ func TestRunPruneRemovesAllDirectoryBinsWhenAllAreStale(t *testing.T) {
 }
 
 func TestRunPruneComparesAgainstCanonicalPaths(t *testing.T) {
-	paths := newStoreWithBin(t, "named", nil)
+	paths := newStoreWithBin(t, "named", map[int]string{1: "keep"})
 	target := filepath.Join(t.TempDir(), "project")
 	if err := os.Mkdir(target, 0o700); err != nil {
 		t.Fatalf("Mkdir: %v", err)
@@ -882,6 +913,18 @@ func TestRunPruneComparesAgainstCanonicalPaths(t *testing.T) {
 	}
 	if got, want := binNames(t, paths), []string{"named", "(dir) " + canonicalPath}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("bins = %v, want %v", got, want)
+	}
+	// The directory bin holds content so it is neither stale nor empty.
+	dirBins, err := store.Open(paths)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	for _, info := range dirBins.ListBins() {
+		if info.IsDirectory() && info.Directory == canonicalPath {
+			if err := dirBins.WriteSlot(info.ID, 1, "keep"); err != nil {
+				t.Fatalf("WriteSlot: %v", err)
+			}
+		}
 	}
 
 	// Removing the symlink leaves the real directory intact: not stale.
@@ -1010,5 +1053,231 @@ func TestRunSearchMatchesUnicodeAndWhitespace(t *testing.T) {
 	}
 	if got, want := output.String(), "unicode\t3\tcafé ☕\n"; got != want {
 		t.Errorf("search output = %q, want %q", got, want)
+	}
+}
+
+func TestRunDoctorWarnsAboutEmptyBins(t *testing.T) {
+	paths, err := store.PathsFor(t.TempDir(), "tpb")
+	if err != nil {
+		t.Fatalf("PathsFor: %v", err)
+	}
+	live := t.TempDir()
+	bins, err := store.Open(paths)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	for _, name := range []string{"empty-named", "full-named", "blank-string"} {
+		if err := bins.EnsureBin(name); err != nil {
+			t.Fatalf("EnsureBin(%q): %v", name, err)
+		}
+	}
+	if err := bins.WriteSlot("full-named", 1, "keep"); err != nil {
+		t.Fatalf("WriteSlot: %v", err)
+	}
+	if err := bins.WriteSlot("full-named", 2, ""); err != nil {
+		t.Fatalf("WriteSlot empty string: %v", err)
+	}
+	if err := bins.WriteSlot("blank-string", 0, ""); err != nil {
+		t.Fatalf("WriteSlot empty string: %v", err)
+	}
+	liveInfo, err := bins.EnsureDirectoryBin(live)
+	if err != nil {
+		t.Fatalf("EnsureDirectoryBin(%q): %v", live, err)
+	}
+	if err := bins.WriteSlot(liveInfo.ID, 1, "keep"); err != nil {
+		t.Fatalf("WriteSlot dir: %v", err)
+	}
+	emptyDir := filepath.Join(t.TempDir(), "emptydir")
+	if err := os.Mkdir(emptyDir, 0o700); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	if _, err := bins.EnsureDirectoryBin(emptyDir); err != nil {
+		t.Fatalf("EnsureDirectoryBin(%q): %v", emptyDir, err)
+	}
+
+	var output bytes.Buffer
+	available := func() clipboard.Diagnostic {
+		return clipboard.Diagnostic{Status: clipboard.StatusOK, Backend: "pbcopy/pbpaste"}
+	}
+	if _, err := runDoctor(paths, &output, available); err != nil {
+		t.Fatalf("runDoctor error = %v, want nil for warnings", err)
+	}
+	// empty-named, blank-string, and the empty directory bin are empty: 3.
+	want := "Clipboard access: OK (pbcopy/pbpaste)\nStale directory bins: OK (none)\nEmpty bins: WARN (3 empty; run 'tpb prune --dry-run' to review)\n" +
+		"  ↳ blank-string\n  ↳ empty-named\n  ↳ (dir) " + emptyDir + "\n"
+	if got := output.String(); got != want {
+		t.Errorf("runDoctor output = %q, want %q", got, want)
+	}
+
+	reopened, err := store.Open(paths)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	if got, want := len(reopened.ListBins()), 5; got != want {
+		t.Errorf("doctor changed bin count to %d, want %d (doctor must not prune)", got, want)
+	}
+}
+
+func TestRunDoctorReportsNoEmptyBinsWhenStorageIsEmpty(t *testing.T) {
+	paths, err := store.PathsFor(t.TempDir(), "tpb")
+	if err != nil {
+		t.Fatalf("PathsFor: %v", err)
+	}
+	var output bytes.Buffer
+	available := func() clipboard.Diagnostic {
+		return clipboard.Diagnostic{Status: clipboard.StatusOK, Backend: "pbcopy/pbpaste"}
+	}
+	if _, err := runDoctor(paths, &output, available); err != nil {
+		t.Fatalf("runDoctor error = %v, want nil", err)
+	}
+	want := "Clipboard access: OK (pbcopy/pbpaste)\nStale directory bins: OK (none)\nEmpty bins: OK (none)\n"
+	if got := output.String(); got != want {
+		t.Errorf("runDoctor output = %q, want %q", got, want)
+	}
+}
+
+func TestRunPruneRemovesEmptyNamedAndDirectoryBins(t *testing.T) {
+	paths := newStoreWithBin(t, "keep", map[int]string{1: "data", 2: ""})
+	bins, err := store.Open(paths)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if err := bins.EnsureBin("empty-named"); err != nil {
+		t.Fatalf("EnsureBin: %v", err)
+	}
+	live := t.TempDir()
+	liveInfo, err := bins.EnsureDirectoryBin(live)
+	if err != nil {
+		t.Fatalf("EnsureDirectoryBin: %v", err)
+	}
+	if err := bins.WriteSlot(liveInfo.ID, 1, "keep"); err != nil {
+		t.Fatalf("WriteSlot dir: %v", err)
+	}
+	// Sibling subdirectories of one parent so prune output order is
+	// deterministic by directory name.
+	parent := t.TempDir()
+	emptyDir := filepath.Join(parent, "emptydir")
+	staleDir := filepath.Join(parent, "stalegone")
+	nonEmptyStaleDir := filepath.Join(parent, "staledata")
+	for _, directory := range []string{emptyDir, staleDir, nonEmptyStaleDir} {
+		if err := os.Mkdir(directory, 0o700); err != nil {
+			t.Fatalf("Mkdir(%q): %v", directory, err)
+		}
+	}
+	if _, err := bins.EnsureDirectoryBin(emptyDir); err != nil {
+		t.Fatalf("EnsureDirectoryBin(%q): %v", emptyDir, err)
+	}
+	if _, err := bins.EnsureDirectoryBin(staleDir); err != nil {
+		t.Fatalf("EnsureDirectoryBin(%q): %v", staleDir, err)
+	}
+	if err := os.RemoveAll(staleDir); err != nil {
+		t.Fatalf("RemoveAll: %v", err)
+	}
+	nonEmptyStaleInfo, err := bins.EnsureDirectoryBin(nonEmptyStaleDir)
+	if err != nil {
+		t.Fatalf("EnsureDirectoryBin(%q): %v", nonEmptyStaleDir, err)
+	}
+	if err := bins.WriteSlot(nonEmptyStaleInfo.ID, 1, "data"); err != nil {
+		t.Fatalf("WriteSlot: %v", err)
+	}
+	if err := os.RemoveAll(nonEmptyStaleDir); err != nil {
+		t.Fatalf("RemoveAll: %v", err)
+	}
+	before := binNames(t, paths)
+
+	var dryRun bytes.Buffer
+	if _, err := run([]string{"prune", "--dry-run"}, paths, &dryRun); err != nil {
+		t.Fatalf("run prune --dry-run: %v", err)
+	}
+	// Named bins sort first, then directory bins by path. The both-stale-and-
+	// empty bin appears exactly once.
+	wantDry := "Would prune empty-named\n" +
+		"Would prune (dir) " + emptyDir + "\n" +
+		"Would prune (dir) " + nonEmptyStaleDir + "\n" +
+		"Would prune (dir) " + staleDir + "\n"
+	if got := dryRun.String(); got != wantDry {
+		t.Errorf("dry-run output = %q, want %q", got, wantDry)
+	}
+	if got := binNames(t, paths); !reflect.DeepEqual(got, before) {
+		t.Errorf("dry-run changed bins from %v to %v", before, got)
+	}
+
+	var output bytes.Buffer
+	if _, err := run([]string{"prune"}, paths, &output); err != nil {
+		t.Fatalf("run prune: %v", err)
+	}
+	wantPruned := "Pruned empty-named\n" +
+		"Pruned (dir) " + emptyDir + "\n" +
+		"Pruned (dir) " + nonEmptyStaleDir + "\n" +
+		"Pruned (dir) " + staleDir + "\n"
+	if got := output.String(); got != wantPruned {
+		t.Errorf("prune output = %q, want %q", got, wantPruned)
+	}
+	if got, want := binNames(t, paths), []string{"keep", "(dir) " + live}; !reflect.DeepEqual(got, want) {
+		t.Errorf("bins after prune = %v, want %v", got, want)
+	}
+
+	var again bytes.Buffer
+	if _, err := run([]string{"prune"}, paths, &again); err != nil {
+		t.Fatalf("run prune again: %v", err)
+	}
+	if got, want := again.String(), "Nothing to prune.\n"; got != want {
+		t.Errorf("second prune output = %q, want %q", got, want)
+	}
+
+	var doctor bytes.Buffer
+	available := func() clipboard.Diagnostic {
+		return clipboard.Diagnostic{Status: clipboard.StatusOK, Backend: "pbcopy/pbpaste"}
+	}
+	if _, err := runDoctor(paths, &doctor, available); err != nil {
+		t.Fatalf("runDoctor after prune: %v", err)
+	}
+	wantDoctor := "Clipboard access: OK (pbcopy/pbpaste)\nStale directory bins: OK (none)\nEmpty bins: OK (none)\n"
+	if got := doctor.String(); got != wantDoctor {
+		t.Errorf("doctor after prune = %q, want %q", got, wantDoctor)
+	}
+}
+
+func TestRunPruneRemovesBinEmptiedByDeletingLastSlot(t *testing.T) {
+	paths := newStoreWithBin(t, "shrinking", map[int]string{1: "data"})
+	bins, err := store.Open(paths)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if err := bins.DeleteSlot("shrinking", 1); err != nil {
+		t.Fatalf("DeleteSlot: %v", err)
+	}
+
+	var output bytes.Buffer
+	if _, err := run([]string{"prune"}, paths, &output); err != nil {
+		t.Fatalf("run prune: %v", err)
+	}
+	if got, want := output.String(), "Pruned shrinking\n"; got != want {
+		t.Errorf("prune output = %q, want %q", got, want)
+	}
+	if got := binNames(t, paths); len(got) != 0 {
+		t.Errorf("bins after prune = %v, want none", got)
+	}
+}
+
+func TestRunPruneReportsNothingWhenStorageIsEmpty(t *testing.T) {
+	paths, err := store.PathsFor(t.TempDir(), "tpb")
+	if err != nil {
+		t.Fatalf("PathsFor: %v", err)
+	}
+	for _, args := range [][]string{{"prune", "--dry-run"}, {"prune"}} {
+		var output bytes.Buffer
+		if _, err := run(args, paths, &output); err != nil {
+			t.Fatalf("run(%v): %v", args, err)
+		}
+		if got, want := output.String(), "Nothing to prune.\n"; got != want {
+			t.Errorf("run(%v) output = %q, want %q", args, got, want)
+		}
+		if _, err := os.Stat(paths.BinsFile); !os.IsNotExist(err) {
+			t.Errorf("run(%v) created storage: stat error = %v, want not exist", args, err)
+		}
+		if _, err := os.Stat(paths.Directory); !os.IsNotExist(err) {
+			t.Errorf("run(%v) created storage directory: stat error = %v, want not exist", args, err)
+		}
 	}
 }

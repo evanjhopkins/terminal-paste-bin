@@ -270,6 +270,126 @@ func (s *Store) StaleDirectoryBins() []BinInfo {
 	return staleDirectoryBins(s.bins)
 }
 
+// EmptyBins returns the bins whose slots are all blank (no stored value or
+// only empty-string values), covering both named and directory bins. Named
+// bins come first alphabetically, then directory bins by path, mirroring
+// ListBins.
+func (s *Store) EmptyBins() []BinInfo {
+	return emptyBins(s.bins)
+}
+
+// PrunableBins returns the bins `tpb prune` would remove: stale directory
+// bins plus empty bins of either kind, each listed once. Named bins come
+// first alphabetically, then directory bins by path.
+func (s *Store) PrunableBins() []BinInfo {
+	return prunableBins(s.bins)
+}
+
+// PruneEmptyBins removes bins whose slots are all blank and returns the bins
+// it removed in EmptyBins order.
+func (s *Store) PruneEmptyBins() ([]BinInfo, error) {
+	var pruned []BinInfo
+	err := s.update(func(bins map[string]bin) error {
+		pruned = emptyBins(bins)
+		for _, info := range pruned {
+			delete(bins, info.ID)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return pruned, nil
+}
+
+// PruneStaleAndEmptyBins removes stale directory bins and empty bins of
+// either kind in a single update, so a bin that is both stale and empty is
+// removed and reported exactly once. It returns the removed bins with named
+// bins first alphabetically, then directory bins by path.
+func (s *Store) PruneStaleAndEmptyBins() ([]BinInfo, error) {
+	var pruned []BinInfo
+	err := s.update(func(bins map[string]bin) error {
+		pruned = prunableBins(bins)
+		for _, info := range pruned {
+			delete(bins, info.ID)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return pruned, nil
+}
+
+// binEmpty reports whether a bin holds zero non-blank slots. A slot counts
+// as blank when it has no stored value or its value is the empty string.
+func binEmpty(stored bin) bool {
+	for _, value := range stored.Slots {
+		if value != "" {
+			return false
+		}
+	}
+	return true
+}
+
+func emptyBins(bins map[string]bin) []BinInfo {
+	empty := make([]BinInfo, 0)
+	for id, stored := range bins {
+		if !binEmpty(stored) {
+			continue
+		}
+		info := BinInfo{ID: id, Name: id, Directory: stored.Directory}
+		if info.IsDirectory() {
+			info.Name = ""
+		}
+		empty = append(empty, info)
+	}
+	sort.Slice(empty, func(left, right int) bool {
+		if empty[left].IsDirectory() != empty[right].IsDirectory() {
+			return !empty[left].IsDirectory()
+		}
+		if empty[left].IsDirectory() {
+			return empty[left].Directory < empty[right].Directory
+		}
+		return empty[left].Name < empty[right].Name
+	})
+	return empty
+}
+
+// prunableBins returns the union of stale directory bins and empty bins,
+// deduplicated by bin ID so a directory bin that is both stale and empty
+// appears exactly once.
+func prunableBins(bins map[string]bin) []BinInfo {
+	staleIDs := make(map[string]bool)
+	for _, info := range staleDirectoryBins(bins) {
+		staleIDs[info.ID] = true
+	}
+	prunable := make([]BinInfo, 0)
+	seen := make(map[string]bool)
+	for id, stored := range bins {
+		info := BinInfo{ID: id, Name: id, Directory: stored.Directory}
+		if info.IsDirectory() {
+			info.Name = ""
+		}
+		if staleIDs[id] || binEmpty(stored) {
+			if !seen[id] {
+				seen[id] = true
+				prunable = append(prunable, info)
+			}
+		}
+	}
+	sort.Slice(prunable, func(left, right int) bool {
+		if prunable[left].IsDirectory() != prunable[right].IsDirectory() {
+			return !prunable[left].IsDirectory()
+		}
+		if prunable[left].IsDirectory() {
+			return prunable[left].Directory < prunable[right].Directory
+		}
+		return prunable[left].Name < prunable[right].Name
+	})
+	return prunable
+}
+
 // PruneDirectoryBins removes directory bins whose directory no longer exists
 // and returns the bins it removed, sorted by directory.
 func (s *Store) PruneDirectoryBins() ([]BinInfo, error) {

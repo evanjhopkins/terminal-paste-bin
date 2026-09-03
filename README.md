@@ -60,19 +60,21 @@ Directory bins follow you: `tpb` opened in a directory always resolves to that d
 
 ## Managing Bins
 
-Named bins can be renamed or deleted, and directory bins whose directory has since been removed can be pruned:
+Named bins can be renamed or deleted, and stale directory bins and empty bins can be pruned:
 
 ```sh
 tpb rename myapp myapp-v2   # keeps every slot, fails if myapp-v2 already exists
 tpb delete myapp-v2         # asks for confirmation, then removes the bin and its slots
 tpb delete --yes myapp-v2   # skips the prompt (also -y); required when stdin is not a terminal
-tpb prune --dry-run         # list directory bins whose directory no longer exists
+tpb prune --dry-run         # preview bins that would be pruned
 tpb prune                   # remove them
 ```
 
+A bin is empty when all of its slots are blank (no stored value or an empty string). Prune removes directory bins whose directory no longer exists (whether or not they still hold slots), plus any empty bin — named or directory-scoped — whether or not its directory still exists. A directory bin that is both stale and empty is reported and removed exactly once. A bin that is neither stale nor empty is never pruned.
+
 Deletion is permanent. When attached to a terminal, `tpb delete` states the bin name and how many non-blank slots it holds before asking `[y/N]`; declining exits non-zero without changing anything. When stdin or stdout is not a terminal and `--yes` is not given, `tpb delete` refuses rather than hanging or deleting silently.
 
-Directory bins are keyed by their canonical path and cannot be renamed or deleted by name; `tpb prune` is the only way to remove them, and it never touches named bins. Prune exits zero even when there is nothing to remove.
+Directory bins are keyed by their canonical path and cannot be renamed or deleted by name; `tpb prune` is the only way to remove them. Prune exits zero even when there is nothing to remove. Pruned bins print as `Pruned <name>` for named bins and `Pruned (dir) <path>` for directory bins (`Would prune ...` with `--dry-run`); running prune twice reports nothing the second time.
 
 The words `list`, `delete`, `rename`, `prune`, `reset`, `doctor`, and `search` are reserved and cannot be used as bin names. A bin created before its name became reserved still loads and can be rescued with `tpb rename`.
 
@@ -146,7 +148,7 @@ tpb reset
 
 ### Diagnosing Problems
 
-`tpb doctor` runs diagnostic checks and exits non-zero if any fail. It verifies clipboard access and counts directory bins whose directory no longer exists:
+`tpb doctor` runs diagnostic checks and exits non-zero if any fail. It verifies clipboard access, counts directory bins whose directory no longer exists, and counts bins whose slots are all blank:
 
 ```sh
 tpb doctor
@@ -155,11 +157,18 @@ tpb doctor
 ```text
 Clipboard access: FAIL
 Stale directory bins: WARN (2 stale; run 'tpb prune --dry-run' to review)
+  ↳ (dir) /gone/project-a
+  ↳ (dir) /gone/project-b
+Empty bins: WARN (2 empty; run 'tpb prune --dry-run' to review)
+  ↳ scratch
+  ↳ (dir) /Users/you/code/app
 
 1 check(s) failed
 ```
 
-Passing checks print in green, warnings in yellow, and failing checks in red when the output is a terminal. Stale directory bins are a warning rather than a failure: doctor still exits zero and recommends reviewing with `tpb prune --dry-run` before pruning. Doctor only reports; it never prunes or otherwise modifies bins.
+Warning checks list each affected bin on its own `↳` line below the summary, using the bare name for named bins and `(dir) <path>` for directory bins.
+
+Passing checks print in green, warnings in yellow, and failing checks in red when the output is a terminal. Stale directory bins and empty bins are warnings rather than failures: doctor still exits zero and recommends reviewing with `tpb prune --dry-run` before pruning. Doctor only reports; it never prunes or otherwise modifies bins.
 
 ## Development
 

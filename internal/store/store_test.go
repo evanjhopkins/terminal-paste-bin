@@ -636,6 +636,168 @@ func TestPruneDirectoryBinsReloadsBeforeRemoving(t *testing.T) {
 	}
 }
 
+func TestEmptyBinsCoversNamedAndDirectoryBins(t *testing.T) {
+	store, _ := openTestStore(t)
+	for _, name := range []string{"empty-named", "blank-string", "full-named"} {
+		if err := store.EnsureBin(name); err != nil {
+			t.Fatalf("EnsureBin(%q): %v", name, err)
+		}
+	}
+	if err := store.WriteSlot("blank-string", 0, ""); err != nil {
+		t.Fatalf("WriteSlot empty string: %v", err)
+	}
+	if err := store.WriteSlot("full-named", 1, "keep"); err != nil {
+		t.Fatalf("WriteSlot: %v", err)
+	}
+	if err := store.WriteSlot("full-named", 2, ""); err != nil {
+		t.Fatalf("WriteSlot empty string: %v", err)
+	}
+	live := t.TempDir()
+	liveInfo, err := store.EnsureDirectoryBin(live)
+	if err != nil {
+		t.Fatalf("EnsureDirectoryBin(%q): %v", live, err)
+	}
+	if err := store.WriteSlot(liveInfo.ID, 1, "keep"); err != nil {
+		t.Fatalf("WriteSlot dir: %v", err)
+	}
+	emptyDir := filepath.Join(t.TempDir(), "emptydir")
+	if err := os.Mkdir(emptyDir, 0o700); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	if _, err := store.EnsureDirectoryBin(emptyDir); err != nil {
+		t.Fatalf("EnsureDirectoryBin(%q): %v", emptyDir, err)
+	}
+
+	var got []string
+	for _, info := range store.EmptyBins() {
+		if info.IsDirectory() {
+			got = append(got, "(dir) "+info.Directory)
+			continue
+		}
+		got = append(got, info.Name)
+	}
+	want := []string{"blank-string", "empty-named", "(dir) " + emptyDir}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("EmptyBins() = %v, want %v", got, want)
+	}
+}
+
+func TestPruneStaleAndEmptyBinsDedupesAndReloads(t *testing.T) {
+	store, paths := openTestStore(t)
+	if err := store.EnsureBin("keep"); err != nil {
+		t.Fatalf("EnsureBin keep: %v", err)
+	}
+	if err := store.WriteSlot("keep", 1, "data"); err != nil {
+		t.Fatalf("WriteSlot: %v", err)
+	}
+	if err := store.EnsureBin("empty-named"); err != nil {
+		t.Fatalf("EnsureBin empty-named: %v", err)
+	}
+	live := t.TempDir()
+	liveInfo, err := store.EnsureDirectoryBin(live)
+	if err != nil {
+		t.Fatalf("EnsureDirectoryBin(%q): %v", live, err)
+	}
+	if err := store.WriteSlot(liveInfo.ID, 1, "data"); err != nil {
+		t.Fatalf("WriteSlot dir: %v", err)
+	}
+	staleEmptyDir := filepath.Join(t.TempDir(), "stale-empty")
+	if err := os.Mkdir(staleEmptyDir, 0o700); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	if _, err := store.EnsureDirectoryBin(staleEmptyDir); err != nil {
+		t.Fatalf("EnsureDirectoryBin(%q): %v", staleEmptyDir, err)
+	}
+	if err := os.RemoveAll(staleEmptyDir); err != nil {
+		t.Fatalf("RemoveAll: %v", err)
+	}
+	staleFullDir := filepath.Join(t.TempDir(), "stale-full")
+	if err := os.Mkdir(staleFullDir, 0o700); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	staleFullInfo, err := store.EnsureDirectoryBin(staleFullDir)
+	if err != nil {
+		t.Fatalf("EnsureDirectoryBin(%q): %v", staleFullDir, err)
+	}
+	if err := store.WriteSlot(staleFullInfo.ID, 1, "data"); err != nil {
+		t.Fatalf("WriteSlot: %v", err)
+	}
+	if err := os.RemoveAll(staleFullDir); err != nil {
+		t.Fatalf("RemoveAll: %v", err)
+	}
+
+	before := len(store.ListBins())
+	prunable := store.PrunableBins()
+	seen := make(map[string]bool)
+	for _, info := range prunable {
+		if seen[info.ID] {
+			t.Fatalf("PrunableBins() lists %v twice", info)
+		}
+		seen[info.ID] = true
+	}
+	if len(prunable) != 3 {
+		t.Fatalf("PrunableBins() = %v, want 3 bins (empty named, stale empty dir, stale full dir)", prunable)
+	}
+	if got := len(store.ListBins()); got != before {
+		t.Fatalf("PrunableBins changed bin count to %d, want %d", got, before)
+	}
+
+	pruned, err := store.PruneStaleAndEmptyBins()
+	if err != nil {
+		t.Fatalf("PruneStaleAndEmptyBins: %v", err)
+	}
+	if len(pruned) != 3 {
+		t.Fatalf("PruneStaleAndEmptyBins() = %v, want 3 bins", pruned)
+	}
+	want := []BinInfo{{ID: "keep", Name: "keep"}, liveInfo}
+	if got := store.ListBins(); !reflect.DeepEqual(got, want) {
+		t.Errorf("ListBins() after prune = %v, want %v", got, want)
+	}
+	persisted := persistedBins(t, paths)
+	if len(persisted) != 2 {
+		t.Errorf("persisted bins after prune = %v, want keep and live directory bins only", persisted)
+	}
+
+	again, err := store.PruneStaleAndEmptyBins()
+	if err != nil {
+		t.Fatalf("second PruneStaleAndEmptyBins: %v", err)
+	}
+	if len(again) != 0 {
+		t.Errorf("second prune removed %v, want nothing", again)
+	}
+}
+
+func TestPruneEmptyBinsReloadsBeforeRemoving(t *testing.T) {
+	// A stale in-memory view must not prune a bin that another process filled
+	// after this store was opened.
+	store, _ := openTestStore(t)
+	if err := store.EnsureBin("flapping"); err != nil {
+		t.Fatalf("EnsureBin: %v", err)
+	}
+	if got := len(store.EmptyBins()); got != 1 {
+		t.Fatalf("EmptyBins() count = %d, want 1", got)
+	}
+	other, err := Open(store.paths)
+	if err != nil {
+		t.Fatalf("Open other: %v", err)
+	}
+	if err := other.WriteSlot("flapping", 1, "late data"); err != nil {
+		t.Fatalf("other WriteSlot: %v", err)
+	}
+
+	pruned, err := store.PruneEmptyBins()
+	if err != nil {
+		t.Fatalf("PruneEmptyBins: %v", err)
+	}
+	if len(pruned) != 0 {
+		t.Errorf("pruned %v after another process filled the bin, want nothing", pruned)
+	}
+	value, exists, err := store.ReadSlot("flapping", 1)
+	if err != nil || !exists || value != "late data" {
+		t.Errorf("slot after reload = (%q, %t, %v), want (late data, true, nil)", value, exists, err)
+	}
+}
+
 func TestDeleteAndRenameAreVisibleToOtherOpenStores(t *testing.T) {
 	first, paths := openTestStore(t)
 	if err := first.EnsureBin("shared"); err != nil {
