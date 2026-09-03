@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="TPB is a tiny, persistent clipboard register for your terminal."
+      content="TPB is a local terminal clipboard register with ten slots per named or directory-scoped bin."
     />
     <title>tpb - Terminal Paste Bin</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -44,6 +44,7 @@
       }
 
       a { color: inherit; text-decoration: none; }
+      a:focus-visible { outline: 3px solid var(--orange); outline-offset: 4px; }
 
       .wrap { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
 
@@ -137,6 +138,8 @@
 
       .install-label { display: block; margin-bottom: 11px; color: var(--terminal-muted); font: 0.72rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
       .install code { position: relative; z-index: 1; color: var(--lime); font: 0.87rem/1.5 var(--mono); word-break: break-all; }
+      .install-meta { position: relative; z-index: 1; display: flex; justify-content: space-between; gap: 16px; margin-top: 13px; padding-top: 12px; border-top: 1px solid rgba(217, 255, 91, 0.16); color: var(--terminal-muted); font: 0.7rem/1.4 var(--mono); }
+      .install-meta a { color: #fff; text-decoration: underline; text-decoration-color: var(--orange); text-underline-offset: 3px; }
 
       .terminal-section {
         padding: 88px 0 106px;
@@ -179,16 +182,20 @@
       .feature-heading h2 { font-size: clamp(2.5rem, 5.5vw, 5rem); }
       .feature-heading p { margin: 0; color: var(--muted); font-size: 1.13rem; line-height: 1.5; }
 
-      .feature-grid { display: grid; grid-template-columns: repeat(4, 1fr); }
+      .feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); }
       .feature { min-height: 230px; padding: 28px 24px; border-right: 1px solid var(--line); }
       .feature:first-child { padding-left: 0; }
-      .feature:last-child { border-right: 0; }
+      .feature:nth-child(3n) { border-right: 0; }
+      .feature:nth-child(n+4) { border-top: 1px solid var(--line); }
+      .feature:nth-child(4) { padding-left: 0; }
       .feature-number { color: var(--orange); font: 0.78rem var(--mono); }
       .feature h3 { margin: 42px 0 10px; font-size: 1.2rem; letter-spacing: -0.035em; }
       .feature p { margin: 0; color: var(--muted); font-size: 0.95rem; line-height: 1.45; }
+      .feature code { font-family: var(--mono); font-size: 0.88em; }
 
       .workflow { padding: 85px 0; background: var(--paper-deep); }
       .workflow-grid { display: grid; grid-template-columns: 0.75fr 1.25fr; gap: 72px; }
+      .workflow .section-tag, .cli-section .section-tag { color: var(--orange); }
       .workflow h2 { font-size: clamp(2.5rem, 5vw, 4.5rem); }
       .workflow-intro { margin-top: 22px; color: var(--muted); line-height: 1.5; }
       .steps { border-top: 1px solid var(--line); }
@@ -197,6 +204,21 @@
       .step h3 { margin: 0 0 5px; font-size: 1.1rem; }
       .step p { margin: 0; color: var(--muted); line-height: 1.45; }
       .step code { color: var(--ink); font-family: var(--mono); font-size: 0.88em; }
+
+      .requirements { margin-top: 30px; padding: 19px 20px; border: 1px solid var(--line); border-radius: 9px; background: rgba(244, 242, 233, 0.5); }
+      .requirements-title { display: block; margin-bottom: 10px; color: var(--orange); font: 0.72rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+      .requirements p { margin: 0; color: var(--muted); font: 0.79rem/1.65 var(--mono); }
+
+      .cli-section { padding: 100px 0 108px; }
+      .cli-heading { display: grid; grid-template-columns: 0.85fr 1.15fr; gap: 70px; align-items: end; margin-bottom: 44px; }
+      .cli-heading h2 { font-size: clamp(2.5rem, 5vw, 4.7rem); }
+      .cli-heading p { max-width: 520px; margin: 0; color: var(--muted); font-size: 1.08rem; line-height: 1.55; }
+      .command-list { border-top: 1px solid var(--line); }
+      .command-row { display: grid; grid-template-columns: minmax(260px, 0.8fr) 1.2fr; gap: 42px; align-items: center; padding: 21px 0; border-bottom: 1px solid var(--line); }
+      .command-row code { width: fit-content; padding: 7px 9px; color: var(--lime); background: var(--terminal); border-radius: 4px; font: 0.8rem var(--mono); }
+      .command-row p { margin: 0; color: var(--muted); line-height: 1.45; }
+      .command-note { margin: 21px 0 0; color: var(--muted); font: 0.75rem/1.5 var(--mono); }
+      .command-note strong { color: var(--orange); font-weight: 500; }
 
       .footer { padding: 72px 0 32px; }
       .footer-cta { display: flex; align-items: end; justify-content: space-between; gap: 28px; padding-bottom: 61px; border-bottom: 1px solid var(--line); }
@@ -207,16 +229,24 @@
 
       @keyframes blink { 50% { opacity: 0; } }
 
+      @media (prefers-reduced-motion: reduce) {
+        html { scroll-behavior: auto; }
+        .cursor { animation: none; }
+        .button { transition: none; }
+      }
+
       @media (max-width: 760px) {
         .wrap { width: min(100% - 32px, 1120px); }
         .nav-links a:not(.github) { display: none; }
         .hero { padding: 55px 0 65px; }
-        .hero-bottom, .feature-heading, .workflow-grid { grid-template-columns: 1fr; gap: 28px; }
+        .hero-bottom, .feature-heading, .workflow-grid, .cli-heading { grid-template-columns: 1fr; gap: 28px; }
         .feature-grid { grid-template-columns: 1fr 1fr; }
         .feature { min-height: 185px; padding: 25px 18px; border-bottom: 1px solid var(--line); }
-        .feature:first-child { padding-left: 0; }
-        .feature:nth-child(2) { border-right: 0; }
-        .feature:nth-child(3) { padding-left: 0; }
+        .feature:nth-child(3n) { border-right: 1px solid var(--line); }
+        .feature:nth-child(even) { border-right: 0; }
+        .feature:nth-child(odd) { padding-left: 0; }
+        .feature:nth-child(4) { padding-left: 18px; }
+        .command-row { grid-template-columns: 1fr; gap: 10px; }
         .footer-cta { display: block; }
         .footer-cta .button { margin-top: 29px; }
       }
@@ -224,9 +254,14 @@
       @media (max-width: 430px) {
         .nav { padding: 18px 0; }
         h1 { font-size: 3.55rem; }
-        .terminal-section, .features { padding: 66px 0; }
+        .terminal-section, .features, .cli-section { padding: 66px 0; }
         .feature-grid { grid-template-columns: 1fr; }
         .feature { padding-left: 0; border-right: 0; }
+        .feature:nth-child(3n) { border-right: 0; }
+        .feature:nth-child(4) { padding-left: 0; }
+        .install-meta { display: block; }
+        .install-meta a { display: inline-block; margin-top: 8px; }
+        .footer-note { display: block; line-height: 1.8; }
       }
     </style>
   </head>
@@ -235,6 +270,7 @@
       <a class="brand" href="#top" aria-label="TPB home"><span class="brand-mark">&gt;_</span> tpb</a>
       <nav class="nav-links" aria-label="Main navigation">
         <a href="#how-it-works">How it works</a>
+        <a href="#commands">Commands</a>
         <a href="#install">Install</a>
         <a class="github" href="https://github.com/evanjhopkins/terminal-paste-bin">GitHub ↗</a>
       </nav>
@@ -242,21 +278,25 @@
 
     <main id="top">
       <section class="wrap hero">
-        <p class="eyebrow">Terminal Paste Bin</p>
-        <h1>Your clipboard<br />has <span>muscle memory.</span></h1>
+        <p class="eyebrow">Ten slots. Named or directory-scoped.</p>
+        <h1>A clipboard<br />you can <span>address.</span></h1>
         <div class="hero-bottom">
-          <p class="lede">A tiny, persistent clipboard register for the text you reach for all day. Built for people who would rather press <code>3</code> than go hunting.</p>
+          <p class="lede">Keep commands, URLs, IDs, and multiline text in persistent bins. Select a slot with one number, then read or write the system clipboard without leaving the terminal.</p>
           <div class="install" id="install">
-            <span class="install-label">Install from source</span>
+            <span class="install-label">Install with Go</span>
             <code>go install github.com/evanjhopkins/terminal-paste-bin/cmd/tpb@latest</code>
+            <div class="install-meta">
+              <span>Requires Go 1.26.6+ · macOS or Linux</span>
+              <a href="https://github.com/evanjhopkins/terminal-paste-bin#installation">Build from a checkout ↗</a>
+            </div>
           </div>
         </div>
       </section>
 
       <section class="terminal-section">
         <div class="wrap">
-          <p class="section-tag">A place for the good stuff</p>
-          <h2>URLs. Commands. IDs.<br />Right where you left them.</h2>
+          <p class="section-tag">The whole interface</p>
+          <h2>Pick a slot.<br />Choose an action.</h2>
           <div class="terminal-window" aria-label="TPB terminal interface example">
             <div class="window-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="window-title">tpb - myapp</span></div>
             <div class="terminal-content">
@@ -281,39 +321,64 @@
 
       <section class="wrap features" id="how-it-works">
         <div class="feature-heading">
-          <h2>Less clipboard archaeology.</h2>
-          <p>TPB keeps the useful fragments in predictable, keyboard-addressable slots. No daemon. No account. No context switch.</p>
+          <h2>Small surface.<br />Useful boundaries.</h2>
+          <p>Each bin is intentionally limited to ten slots. Use a stable name for values shared across projects, or let the current directory select the bin automatically.</p>
         </div>
         <div class="feature-grid">
-          <article class="feature"><span class="feature-number">01</span><h3>Ten slots, zero hunting.</h3><p>Slots map directly to <code>1</code> through <code>9</code>, then <code>0</code>. Your hands already know where to go.</p></article>
-          <article class="feature"><span class="feature-number">02</span><h3>Named bins.</h3><p>Keep <code>myapp</code>, <code>production</code>, and <code>scratch</code separate without changing your flow.</p></article>
-          <article class="feature"><span class="feature-number">03</span><h3>System clipboard in, out.</h3><p>Write your current clipboard to a slot, or read a slot directly back to the system clipboard.</p></article>
-          <article class="feature"><span class="feature-number">04</span><h3>Local by default.</h3><p>Small local JSON files. Atomic writes. Nothing leaves your machine.</p></article>
+          <article class="feature"><span class="feature-number">01</span><h3>Ten direct-access slots.</h3><p>Slots map to <code>1</code> through <code>9</code>, then <code>0</code>. Values can contain Unicode and multiple lines.</p></article>
+          <article class="feature"><span class="feature-number">02</span><h3>Directory bins.</h3><p>Run <code>tpb</code> with no argument to open the bin for the canonical path of the current directory.</p></article>
+          <article class="feature"><span class="feature-number">03</span><h3>Named bins.</h3><p>Use <code>tpb myapp</code> to create or reopen a bin that is available from any working directory.</p></article>
+          <article class="feature"><span class="feature-number">04</span><h3>Clipboard in and out.</h3><p>Save the current system clipboard with <code>w</code>, or put the selected slot back with <code>r</code>.</p></article>
+          <article class="feature"><span class="feature-number">05</span><h3>Search every bin.</h3><p><code>tpb search text</code> returns script-friendly, tab-separated matches without opening the TUI.</p></article>
+          <article class="feature"><span class="feature-number">06</span><h3>Local JSON storage.</h3><p>Data is protected by file locking and atomic writes. TPB has no account, daemon, sync service, or network calls.</p></article>
         </div>
       </section>
 
       <section class="workflow">
         <div class="wrap workflow-grid">
           <div>
-            <p class="section-tag">The flow</p>
-            <h2>Keep it close.<br />Keep moving.</h2>
-            <p class="workflow-intro">Built for the small bits of text that interrupt real work when they disappear.</p>
+            <p class="section-tag">Quick start</p>
+            <h2>Clipboard to slot.<br />Slot to clipboard.</h2>
+            <p class="workflow-intro">There is no setup file to write and no process to keep running.</p>
+            <div class="requirements">
+              <span class="requirements-title">Clipboard support</span>
+              <p>macOS: pbcopy + pbpaste<br />Wayland: wl-clipboard<br />X11: xclip or xsel</p>
+            </div>
           </div>
           <div class="steps">
-            <article class="step"><span class="step-no">01</span><div><h3>Open a bin</h3><p>Run <code>tpb</code> for a register scoped to the current directory, or <code>tpb myapp</code> for a project-specific one.</p></div></article>
-            <article class="step"><span class="step-no">02</span><div><h3>Choose a slot</h3><p>Press a number or use the arrow keys. No mouse, no Enter, no ceremony.</p></div></article>
-            <article class="step"><span class="step-no">03</span><div><h3>Read or write</h3><p><code>w</code> saves the system clipboard. <code>r</code> copies the selected slot back when you need it.</p></div></article>
+            <article class="step"><span class="step-no">01</span><div><h3>Open a bin</h3><p>Run <code>tpb</code> for the current directory, or <code>tpb myapp</code> for a reusable named bin.</p></div></article>
+            <article class="step"><span class="step-no">02</span><div><h3>Select a slot</h3><p>Press <code>1</code> to <code>9</code> or <code>0</code>. Arrow keys also move through the list.</p></div></article>
+            <article class="step"><span class="step-no">03</span><div><h3>Write, then read</h3><p>Press <code>w</code> to save the system clipboard and exit. Reopen the bin, select the slot, and press <code>r</code> to copy it back.</p></div></article>
           </div>
         </div>
+      </section>
+
+      <section class="wrap cli-section" id="commands">
+        <div class="cli-heading">
+          <div>
+            <p class="section-tag">Outside the TUI</p>
+            <h2>Bins stay<br />manageable.</h2>
+          </div>
+          <p>List and search from scripts, rename or remove named bins, and preview cleanup before deleting stale directory bins or empty bins.</p>
+        </div>
+        <div class="command-list">
+          <div class="command-row"><code>tpb list</code><p>List named bins, then directory bins, in alphabetical order.</p></div>
+          <div class="command-row"><code>tpb search postgres</code><p>Search all non-blank slots with a case-insensitive substring match.</p></div>
+          <div class="command-row"><code>tpb rename old new</code><p>Rename a named bin without changing its slots.</p></div>
+          <div class="command-row"><code>tpb delete myapp</code><p>Permanently remove a named bin after an interactive confirmation.</p></div>
+          <div class="command-row"><code>tpb prune --dry-run</code><p>Preview empty bins and directory bins whose paths no longer exist.</p></div>
+          <div class="command-row"><code>tpb doctor</code><p>Report clipboard availability plus stale and empty bins.</p></div>
+        </div>
+        <p class="command-note"><strong>Execution:</strong> pressing <code>x</code> runs the selected slot immediately through <code>$SHELL -c</code>, without confirmation.</p>
       </section>
     </main>
 
     <footer class="wrap footer">
       <div class="footer-cta">
-        <h2>Your terminal<br />deserves a better<br />junk drawer.</h2>
-        <a class="button" href="https://github.com/evanjhopkins/terminal-paste-bin">View the project ↗</a>
+        <h2>Ten slots.<br />No service<br />attached.</h2>
+        <a class="button" href="https://github.com/evanjhopkins/terminal-paste-bin#installation">Install tpb ↗</a>
       </div>
-      <div class="footer-note"><span>tpb / terminal paste bin</span><span>macOS + Linux / MIT</span></div>
+      <div class="footer-note"><span>tpb / terminal paste bin</span><span>Go 1.26.6+ / macOS + Linux / MIT</span></div>
     </footer>
   </body>
 </html>
